@@ -1,0 +1,7 @@
+-- Object Type: TASKS
+-- Level: L5, ExecOrder: 25
+
+create or replace task ALFA_EDW_DEV.PUBLIC.WF_BASE_POLICY_ASSOCIATION_DAILY__WKLT_BASE_PRTY_ADDR_ELCTRNC_ADDR
+	warehouse=COMPUTE_WH
+	after ALFA_EDW_DEV.PUBLIC.WF_BASE_POLICY_ASSOCIATION_DAILY__WKLT_BASE_PRTY_ADDR_TLPHN_NUM
+	as CALL sp_launch_worklet('wf_base_policy_association_daily', 'wklt_base_prty_addr_elctrnc_addr');

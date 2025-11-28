@@ -1,0 +1,7 @@
+-- Object Type: TASKS
+-- Level: L3, ExecOrder: 211
+
+create or replace task ALFA_EDW_DEV.PUBLIC.WKLT_BASE_PLCY_CVGE_COST_MTRC_INSUPD__S_M_BASE_PLCY_CVGE_COST_MTRC_INSUPD
+	warehouse=COMPUTE_WH
+	after ALFA_EDW_DEV.PUBLIC.WKLT_BASE_PLCY_CVGE_COST_MTRC_INSUPD__S_M_GET_PRCS_ID
+	as CALL m_base_plcy_cvge_cost_mtrc_insupd('wklt_base_plcy_cvge_cost_mtrc_insupd');

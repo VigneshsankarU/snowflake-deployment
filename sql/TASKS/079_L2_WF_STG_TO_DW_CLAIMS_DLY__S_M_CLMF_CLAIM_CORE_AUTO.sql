@@ -1,0 +1,7 @@
+-- Object Type: TASKS
+-- Level: L2, ExecOrder: 67
+
+create or replace task ALFA_EDW_DEV.PUBLIC.WF_STG_TO_DW_CLAIMS_DLY__S_M_CLMF_CLAIM_CORE_AUTO
+	warehouse=COMPUTE_WH
+	after ALFA_EDW_DEV.PUBLIC.WF_STG_TO_DW_CLAIMS_DLY_ROOT
+	as CALL public.m_CLMF_CLAIM_CORE_AUTO('wf_STG_TO_DW_CLAIMS_DLY');
