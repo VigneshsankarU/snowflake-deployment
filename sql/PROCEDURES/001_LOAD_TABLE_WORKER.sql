@@ -206,5 +206,5 @@ BEGIN
     );
 
 
-    RETURN ''Processed '' || TO_VARCHAR(:v_file_count) || '' file(s) for '' || :p_target_table_path;
+    RETURN ''Processed-1 '' || TO_VARCHAR(:v_file_count) || '' file(s) for '' || :p_target_table_path;
 END';
