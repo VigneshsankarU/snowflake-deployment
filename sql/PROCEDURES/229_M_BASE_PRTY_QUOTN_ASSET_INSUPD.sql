@@ -1,0 +1,616 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_BASE_PRTY_QUOTN_ASSET_INSUPD("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' DECLARE 
+
+start_dttm TIMESTAMP;
+end_dttm TIMESTAMP;
+PRCS_ID INTEGER;
+P_DEFAULT_STR_CD char;
+var_ContactroleTypecode char;
+BEGIN 
+start_dttm := CURRENT_TIMESTAMP();
+end_dttm := CURRENT_TIMESTAMP();
+PRCS_ID := 1;  
+
+-- Component LKP_INDIV_CNT_MGR, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_INDIV_CNT_MGR AS
+(
+SELECT 
+	INDIV.INDIV_PRTY_ID as INDIV_PRTY_ID, 
+	INDIV.NK_LINK_ID as NK_LINK_ID 
+FROM 
+	DB_T_PROD_CORE.INDIV
+WHERE
+	INDIV.NK_PUBLC_ID IS NULL
+);
+
+
+-- Component LKP_INSRNC_QUOTN, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_INSRNC_QUOTN AS
+(
+SELECT INSRNC_QUOTN.QUOTN_ID AS QUOTN_ID, INSRNC_QUOTN.NK_JOB_NBR AS NK_JOB_NBR, INSRNC_QUOTN.VERS_NBR AS VERS_NBR FROM DB_T_PROD_CORE.INSRNC_QUOTN
+QUALIFY ROW_NUMBER() OVER(PARTITION BY  INSRNC_QUOTN.NK_JOB_NBR, INSRNC_QUOTN.VERS_NBR,  INSRNC_QUOTN.SRC_SYS_CD  ORDER BY INSRNC_QUOTN.EDW_END_DTTM DESC) = 1
+);
+
+
+-- Component LKP_PRTY_ASSET_ID, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_PRTY_ASSET_ID AS
+(
+SELECT PRTY_ASSET.PRTY_ASSET_ID as PRTY_ASSET_ID, PRTY_ASSET.ASSET_INSRNC_HIST_TYPE_CD as ASSET_INSRNC_HIST_TYPE_CD, PRTY_ASSET.ASSET_DESC as ASSET_DESC, PRTY_ASSET.PRTY_ASSET_NAME as PRTY_ASSET_NAME, PRTY_ASSET.PRTY_ASSET_STRT_DTTM as PRTY_ASSET_STRT_DTTM, PRTY_ASSET.PRTY_ASSET_END_DTTM as PRTY_ASSET_END_DTTM, PRTY_ASSET.EDW_STRT_DTTM as EDW_STRT_DTTM, PRTY_ASSET.EDW_END_DTTM as EDW_END_DTTM, PRTY_ASSET.SRC_SYS_CD as SRC_SYS_CD, PRTY_ASSET.ASSET_HOST_ID_VAL as ASSET_HOST_ID_VAL, PRTY_ASSET.PRTY_ASSET_SBTYPE_CD as PRTY_ASSET_SBTYPE_CD, PRTY_ASSET.PRTY_ASSET_CLASFCN_CD as PRTY_ASSET_CLASFCN_CD 
+FROM DB_T_PROD_CORE.PRTY_ASSET 
+QUALIFY ROW_NUMBER() OVER(PARTITION BY  ASSET_HOST_ID_VAL,PRTY_ASSET_SBTYPE_CD,PRTY_ASSET_CLASFCN_CD ORDER BY EDW_END_DTTM DESC) = 1
+);
+
+
+-- Component LKP_TERADATA_ETL_REF_XLAT, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TERADATA_ETL_REF_XLAT AS
+(
+SELECT 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL as TGT_IDNTFTN_VAL
+
+	,TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_VAL as SRC_IDNTFTN_VAL 
+
+FROM 
+
+	DB_T_PROD_CORE.TERADATA_ETL_REF_XLAT
+
+WHERE 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_NM= ''PRTY_AGMT_ROLE''
+
+	AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_NM IN (''pctl_accountcontactrole.typecode'',''pctl_userrole.typecode'',''cctl_contactrole.typecode'',''pctl_policycontactrole.TYPECODE'',''pctl_additionalinteresttype.typecode'',''bctl_accountrole.typecode'',''derived'') 
+
+	AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_SYS in (''GW'',''DS'') 
+
+	AND TERADATA_ETL_REF_XLAT.EXPN_DT=''9999-12-31''
+);
+
+
+-- Component LKP_TERADATA_ETL_REF_XLAT_ASSET_CLASFCN, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TERADATA_ETL_REF_XLAT_ASSET_CLASFCN AS
+(
+SELECT 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL as TGT_IDNTFTN_VAL
+
+	,TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_VAL as SRC_IDNTFTN_VAL 
+
+FROM 
+
+	DB_T_PROD_CORE.TERADATA_ETL_REF_XLAT
+
+WHERE 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_NM= ''PRTY_ASSET_CLASFCN'' 
+
+             AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_NM in ( ''derived'' ,''pcx_holineschcovitemcov_alfa.ChoiceTerm1'', ''contentlineitemschedule.typecode'',''cctl_contentlineitemschedule'',''pctl_bp7classificationproperty.typecode'')
+
+		AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_SYS in (''DS'', ''GW'') 
+
+		AND TERADATA_ETL_REF_XLAT.EXPN_DT=''9999-12-31''
+);
+
+
+-- Component LKP_TERADATA_ETL_REF_XLAT_ASSET_SBTYPE, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TERADATA_ETL_REF_XLAT_ASSET_SBTYPE AS
+(
+SELECT 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL as TGT_IDNTFTN_VAL
+
+	,TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_VAL as SRC_IDNTFTN_VAL 
+
+FROM 
+
+	DB_T_PROD_CORE.TERADATA_ETL_REF_XLAT
+
+WHERE 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_NM= ''PRTY_ASSET_SBTYPE'' 
+
+             AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_NM= ''derived'' 
+
+		AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_SYS=''DS'' 
+
+		AND TERADATA_ETL_REF_XLAT.EXPN_DT=''9999-12-31''
+);
+
+
+-- Component SQ_pc_prty_agmt_quotn_asset_x, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_pc_prty_agmt_quotn_asset_x AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as AddressBookUID,
+$2 as Contacttype,
+$3 as Branchnumber,
+$4 as FixedID,
+$5 as SubType,
+$6 as classification_code,
+$7 as Role_cd,
+$8 as Jobnumber,
+$9 as updatetime,
+$10 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+select AddressBookUID,Contacttype,Branchnumber,FixedID,SBType,classification_code,Role_cd,Jobnumber,UpdateTime from (
+
+select distinct pc.AddressBookUID_stg as AddressBookUID
+
+,pctl.TYPECODE_stg as contacttype
+
+,cast(pp.branchnumber_stg as varchar(255)) as branchnumber
+
+,ppv.FixedID_stg as FixedID
+
+,''PRTY_ASSET_SBTYPE4'' SBType
+
+,''PRTY_ASSET_CLASFCN3'' as classification_code
+
+,''PRTY_AGMT_ROLE7'' AS Role_cd 
+
+,pj.JobNumber_stg as JobNumber
+
+,pv.UpdateTime_stg as UpdateTime
+
+from DB_T_PROD_STAG.pc_policyperiod pp
+
+join DB_T_PROD_STAG.pc_vehicledriver pv on pv.BranchID_stg = pp.id_stg 
+
+join DB_T_PROD_STAG.pc_personalvehicle ppv on ppv.FixedID_stg = pv.vehicle_stg and ppv.BranchID_stg = pp.id_stg
+
+join DB_T_PROD_STAG.pc_policycontactrole ppc on pv.PolicyDriver_stg = ppc.id_stg
+
+join DB_T_PROD_STAG.pc_contact pc on ppc.ContactDenorm_stg = pc.ID_stg
+
+join DB_T_PROD_STAG.pctl_contact pctl on pctl.ID_stg=pc.subtype_stg
+
+join DB_T_PROD_STAG.pc_job pj on pj.id_stg=pp.JobID_stg
+
+join DB_T_PROD_STAG.pctl_job pcj on pcj.id_stg=pj.Subtype_stg
+
+join DB_T_PROD_STAG.pctl_policyperiodstatus pps on pps.id_stg=pp.Status_stg
+
+where pv.Rated_alfa_stg = 1 and pps.TYPECODE_stg<>''Temporary'' and pc.AddressBookUID_stg is not null and pj.JobNumber_stg is not null and ppv.FixedId_stg is not null
+
+and ppv.ExpirationDate_stg is null and pv.ExpirationDate_stg is null 
+
+and  pp.UpdateTime_stg > (:START_DTTM)	and pp.UpdateTime_stg <= (:end_dttm)
+
+and pcj.TYPECODE_stg in (''Submission'',''PolicyChange'',''Renewal'')) as a
+
+	qualify	ROW_NUMBER() OVER  (partition by AddressBookUID,Branchnumber,FixedID,SBType,classification_code,Role_cd,Jobnumber ORDER BY updatetime desc)=1
+) SRC
+)
+);
+
+
+-- Component exp_pass_to_src, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_to_src AS
+(
+SELECT
+SQ_pc_prty_agmt_quotn_asset_x.AddressBookUID as AddressBookUID,
+SQ_pc_prty_agmt_quotn_asset_x.Contacttype as Contacttype,
+SQ_pc_prty_agmt_quotn_asset_x.FixedID as FixedID,
+SQ_pc_prty_agmt_quotn_asset_x.SubType as SubType,
+SQ_pc_prty_agmt_quotn_asset_x.classification_code as classification_code,
+SQ_pc_prty_agmt_quotn_asset_x.Role_cd as Role_cd,
+SQ_pc_prty_agmt_quotn_asset_x.Jobnumber as Jobnumber,
+TO_NUMBER(SQ_pc_prty_agmt_quotn_asset_x.Branchnumber) as o_Branchnumber,
+SQ_pc_prty_agmt_quotn_asset_x.updatetime as updatetime,
+SQ_pc_prty_agmt_quotn_asset_x.source_record_id
+FROM
+SQ_pc_prty_agmt_quotn_asset_x
+);
+
+
+-- Component exp_data_transformation, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_data_transformation AS
+(
+SELECT
+LKP_1.INDIV_PRTY_ID /* replaced lookup LKP_INDIV_CNT_MGR */ as Out_prty_id,
+LKP_2.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT_ASSET_SBTYPE */ as v_prty_asset_sbtype_cd,
+LKP_3.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT_ASSET_CLASFCN */ as v_class_cd,
+CASE WHEN LKP_4.PRTY_ASSET_ID /* replaced lookup LKP_PRTY_ASSET_ID */ IS NULL THEN 9999 ELSE LKP_5.PRTY_ASSET_ID /* replaced lookup LKP_PRTY_ASSET_ID */ END as Out_PRTY_ASSET_ID,
+CASE WHEN LKP_6.QUOTN_ID /* replaced lookup LKP_INSRNC_QUOTN */ IS NULL THEN 9999 ELSE LKP_7.QUOTN_ID /* replaced lookup LKP_INSRNC_QUOTN */ END as Out_QUOTN_ID,
+CASE WHEN LKP_8.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT */ IS NULL THEN ''UNK'' ELSE LKP_9.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT */ END as PRTY_QUOTN_ROLE_CD,
+TO_DATE ( ''01/01/1900'' , ''MM/DD/YYYY'' ) as PRTY_QUOTN_STRT_DT,
+''UNK'' as ASSET_CNTRCT_ROLE_SBTYPE_CD,
+TO_DATE ( ''01/01/1900'' , ''MM/DD/YYYY'' ) as QUOTN_ASSET_STRT_DT,
+''UNK'' as ASSET_ROLE_CD,
+TO_DATE ( ''01/01/1900'' , ''MM/DD/YYYY'' ) as PRTY_QUOTN_ASSET_STRT_DTTM,
+TO_DATE ( ''12/31/9999 23:59:59.999999'' , ''MM/DD/YYYY HH24:MI:SS.FF6'' ) as PRTY_QUOTN_ASSET_END_DTTM,
+:PRCS_ID as PRCS_ID1,
+CURRENT_TIMESTAMP as EDW_STRT_DTTM,
+exp_pass_to_src.updatetime as TRANS_STRT_DTTM,
+TO_timestamp ( ''12/31/9999 23:59:59.999999'' , ''MM/DD/YYYY HH24:MI:SS.FF6'' ) as EDW_END_DTTM,
+to_timestamp ( ''9999-12-31 23:59:59.999999'' , ''YYYY-MM-DD HH24:MI:SS.FF6'' ) as TRANS_END_DTTM,
+exp_pass_to_src.source_record_id,
+row_number() over (partition by exp_pass_to_src.source_record_id order by exp_pass_to_src.source_record_id) as RNK
+FROM
+exp_pass_to_src
+LEFT JOIN LKP_INDIV_CNT_MGR LKP_1 ON LKP_1.NK_LINK_ID = exp_pass_to_src.AddressBookUID
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT_ASSET_SBTYPE LKP_2 ON LKP_2.SRC_IDNTFTN_VAL = exp_pass_to_src.SubType
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT_ASSET_CLASFCN LKP_3 ON LKP_3.SRC_IDNTFTN_VAL = exp_pass_to_src.classification_code
+LEFT JOIN LKP_PRTY_ASSET_ID LKP_4 ON LKP_4.ASSET_HOST_ID_VAL = exp_pass_to_src.FixedID AND LKP_4.PRTY_ASSET_SBTYPE_CD = v_prty_asset_sbtype_cd AND LKP_4.PRTY_ASSET_CLASFCN_CD = v_class_cd
+LEFT JOIN LKP_PRTY_ASSET_ID LKP_5 ON LKP_5.ASSET_HOST_ID_VAL = exp_pass_to_src.FixedID AND LKP_5.PRTY_ASSET_SBTYPE_CD = v_prty_asset_sbtype_cd AND LKP_5.PRTY_ASSET_CLASFCN_CD = v_class_cd
+LEFT JOIN LKP_INSRNC_QUOTN LKP_6 ON LKP_6.NK_JOB_NBR = exp_pass_to_src.Jobnumber AND LKP_6.VERS_NBR = exp_pass_to_src.o_Branchnumber
+LEFT JOIN LKP_INSRNC_QUOTN LKP_7 ON LKP_7.NK_JOB_NBR = exp_pass_to_src.Jobnumber AND LKP_7.VERS_NBR = exp_pass_to_src.o_Branchnumber
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT LKP_8 ON LKP_8.SRC_IDNTFTN_VAL = exp_pass_to_src.Role_cd
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT LKP_9 ON LKP_9.SRC_IDNTFTN_VAL = exp_pass_to_src.Role_cd
+QUALIFY RNK = 1
+);
+
+
+-- Component LKP_PRTY_QUOTN_ASSET, Type LOOKUP 
+CREATE OR REPLACE TEMPORARY TABLE LKP_PRTY_QUOTN_ASSET AS
+(
+SELECT
+LKP.QUOTN_ID,
+LKP.PRTY_QUOTN_ROLE_CD,
+LKP.PRTY_QUOTN_STRT_DTTM,
+LKP.PRTY_ID,
+LKP.PRTY_ASSET_ID,
+LKP.ASSET_CNTRCT_ROLE_SBTYPE_CD,
+LKP.QUOTN_ASSET_STRT_DTTM,
+LKP.ASSET_ROLE_CD,
+LKP.PRTY_QUOTN_ASSET_STRT_DTTM,
+LKP.PRTY_QUOTN_ASSET_END_DTTM,
+LKP.EDW_STRT_DTTM,
+exp_data_transformation.Out_prty_id as Out_prty_id,
+exp_data_transformation.Out_PRTY_ASSET_ID as Out_PRTY_ASSET_ID,
+exp_data_transformation.Out_QUOTN_ID as Out_QUOTN_ID,
+exp_data_transformation.source_record_id,
+ROW_NUMBER() OVER(PARTITION BY exp_data_transformation.source_record_id ORDER BY LKP.QUOTN_ID asc,LKP.PRTY_QUOTN_ROLE_CD asc,LKP.PRTY_QUOTN_STRT_DTTM asc,LKP.PRTY_ID asc,LKP.PRTY_ASSET_ID asc,LKP.ASSET_CNTRCT_ROLE_SBTYPE_CD asc,LKP.QUOTN_ASSET_STRT_DTTM asc,LKP.ASSET_ROLE_CD asc,LKP.PRTY_QUOTN_ASSET_STRT_DTTM asc,LKP.PRTY_QUOTN_ASSET_END_DTTM asc,LKP.EDW_STRT_DTTM asc) RNK
+FROM
+exp_data_transformation
+LEFT JOIN (
+SELECT PRTY_QUOTN_ASSET.PRTY_QUOTN_STRT_DTTM as PRTY_QUOTN_STRT_DTTM, PRTY_QUOTN_ASSET.ASSET_CNTRCT_ROLE_SBTYPE_CD as ASSET_CNTRCT_ROLE_SBTYPE_CD, 
+ PRTY_QUOTN_ASSET.QUOTN_ASSET_STRT_DTTM as QUOTN_ASSET_STRT_DTTM, PRTY_QUOTN_ASSET.PRTY_QUOTN_ASSET_STRT_DTTM as PRTY_QUOTN_ASSET_STRT_DTTM, 
+ PRTY_QUOTN_ASSET.PRTY_QUOTN_ASSET_END_DTTM as PRTY_QUOTN_ASSET_END_DTTM,  PRTY_QUOTN_ASSET.EDW_STRT_DTTM as EDW_STRT_DTTM, 
+  PRTY_QUOTN_ASSET.QUOTN_ID as QUOTN_ID, PRTY_QUOTN_ASSET.PRTY_ID as PRTY_ID, PRTY_QUOTN_ASSET.PRTY_ASSET_ID as PRTY_ASSET_ID,
+ PRTY_QUOTN_ASSET.PRTY_QUOTN_ROLE_CD as PRTY_QUOTN_ROLE_CD, 
+ PRTY_QUOTN_ASSET.ASSET_ROLE_CD as ASSET_ROLE_CD FROM DB_T_PROD_CORE.PRTY_QUOTN_ASSET 
+ QUALIFY ROW_NUMBER() OVER(PARTITION BY QUOTN_ID,PRTY_QUOTN_ROLE_CD,PRTY_ID,PRTY_ASSET_ID,ASSET_ROLE_CD  ORDER BY EDW_END_DTTM desc) = 1
+) LKP ON LKP.QUOTN_ID = exp_data_transformation.Out_QUOTN_ID AND LKP.PRTY_ID = exp_data_transformation.Out_prty_id AND LKP.PRTY_ASSET_ID = exp_data_transformation.Out_PRTY_ASSET_ID AND LKP.PRTY_QUOTN_ROLE_CD = exp_data_transformation.PRTY_QUOTN_ROLE_CD AND LKP.ASSET_ROLE_CD = exp_data_transformation.ASSET_ROLE_CD
+QUALIFY RNK = 1
+);
+
+
+-- Component exp_data_compare, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_data_compare AS
+(
+SELECT
+exp_data_transformation.Out_prty_id as Out_prty_id,
+exp_data_transformation.Out_PRTY_ASSET_ID as Out_PRTY_ASSET_ID,
+exp_data_transformation.Out_QUOTN_ID as Out_QUOTN_ID,
+exp_data_transformation.PRTY_QUOTN_ROLE_CD as PRTY_QUOTN_ROLE_CD,
+exp_data_transformation.PRTY_QUOTN_STRT_DT as PRTY_QUOTN_STRT_DT,
+exp_data_transformation.ASSET_CNTRCT_ROLE_SBTYPE_CD as ASSET_CNTRCT_ROLE_SBTYPE_CD,
+exp_data_transformation.QUOTN_ASSET_STRT_DT as QUOTN_ASSET_STRT_DT,
+exp_data_transformation.ASSET_ROLE_CD as ASSET_ROLE_CD,
+exp_data_transformation.PRTY_QUOTN_ASSET_STRT_DTTM as PRTY_QUOTN_ASSET_STRT_DTTM,
+exp_data_transformation.PRTY_QUOTN_ASSET_END_DTTM as PRTY_QUOTN_ASSET_END_DTTM,
+exp_data_transformation.PRCS_ID1 as PRCS_ID1,
+exp_data_transformation.EDW_STRT_DTTM as EDW_STRT_DTTM,
+exp_data_transformation.TRANS_STRT_DTTM as TRANS_STRT_DTTM,
+exp_data_transformation.EDW_END_DTTM as EDW_END_DTTM,
+exp_data_transformation.TRANS_END_DTTM as TRANS_END_DTTM,
+LKP_PRTY_QUOTN_ASSET.QUOTN_ID as LKP_QUOTN_ID,
+LKP_PRTY_QUOTN_ASSET.PRTY_ID as LKP_PRTY_ID,
+LKP_PRTY_QUOTN_ASSET.PRTY_ASSET_ID as LKP_PRTY_ASSET_ID,
+LKP_PRTY_QUOTN_ASSET.PRTY_QUOTN_ROLE_CD as LKP_PRTY_QUOTN_ROLE_CD,
+LKP_PRTY_QUOTN_ASSET.ASSET_ROLE_CD as LKP_ASSET_ROLE_CD,
+MD5 ( TO_CHAR ( exp_data_transformation.PRTY_QUOTN_STRT_DT ) || exp_data_transformation.ASSET_CNTRCT_ROLE_SBTYPE_CD || TO_CHAR ( exp_data_transformation.QUOTN_ASSET_STRT_DT ) || TO_CHAR ( exp_data_transformation.PRTY_QUOTN_ASSET_STRT_DTTM ) || TO_CHAR ( exp_data_transformation.PRTY_QUOTN_ASSET_END_DTTM ) ) as SRC_MD5,
+MD5 ( TO_CHAR ( LKP_PRTY_QUOTN_ASSET.PRTY_QUOTN_STRT_DTTM ) || LKP_PRTY_QUOTN_ASSET.ASSET_CNTRCT_ROLE_SBTYPE_CD || TO_CHAR ( LKP_PRTY_QUOTN_ASSET.QUOTN_ASSET_STRT_DTTM ) || TO_CHAR ( LKP_PRTY_QUOTN_ASSET.PRTY_QUOTN_ASSET_STRT_DTTM ) || TO_CHAR ( LKP_PRTY_QUOTN_ASSET.PRTY_QUOTN_ASSET_END_DTTM ) ) as TGT_MD5,
+CASE WHEN TGT_MD5 IS NULL THEN ''I'' ELSE CASE WHEN SRC_MD5 <> TGT_MD5 THEN ''U'' ELSE ''R'' END END as OUT_INS_UPD,
+LKP_PRTY_QUOTN_ASSET.EDW_STRT_DTTM as LKP_EDW_STRT_DTTM,
+exp_data_transformation.source_record_id
+FROM
+exp_data_transformation
+INNER JOIN LKP_PRTY_QUOTN_ASSET ON exp_data_transformation.source_record_id = LKP_PRTY_QUOTN_ASSET.source_record_id
+);
+
+
+-- Component RTR_INS_UPD_INSERT, Type ROUTER Output Group INSERT
+CREATE OR REPLACE TEMPORARY TABLE RTR_INS_UPD_INSERT AS
+(SELECT
+exp_data_compare.Out_prty_id as Out_prty_id,
+exp_data_compare.Out_PRTY_ASSET_ID as Out_PRTY_ASSET_ID,
+exp_data_compare.Out_QUOTN_ID as Out_QUOTN_ID,
+exp_data_compare.PRTY_QUOTN_ROLE_CD as PRTY_QUOTN_ROLE_CD,
+exp_data_compare.PRTY_QUOTN_STRT_DT as PRTY_QUOTN_STRT_DT,
+exp_data_compare.ASSET_CNTRCT_ROLE_SBTYPE_CD as ASSET_CNTRCT_ROLE_SBTYPE_CD,
+exp_data_compare.QUOTN_ASSET_STRT_DT as QUOTN_ASSET_STRT_DT,
+exp_data_compare.ASSET_ROLE_CD as ASSET_ROLE_CD,
+exp_data_compare.PRTY_QUOTN_ASSET_STRT_DTTM as PRTY_QUOTN_ASSET_STRT_DTTM,
+exp_data_compare.PRTY_QUOTN_ASSET_END_DTTM as PRTY_QUOTN_ASSET_END_DTTM,
+exp_data_compare.PRCS_ID1 as PRCS_ID1,
+exp_data_compare.EDW_STRT_DTTM as EDW_STRT_DTTM,
+exp_data_compare.TRANS_STRT_DTTM as TRANS_STRT_DTTM,
+exp_data_compare.EDW_END_DTTM as EDW_END_DTTM,
+exp_data_compare.TRANS_END_DTTM as TRANS_END_DTTM,
+exp_data_compare.LKP_EDW_STRT_DTTM as LKP_EDW_STRT_DTTM,
+exp_data_compare.OUT_INS_UPD as OUT_INS_UPD,
+exp_data_compare.LKP_QUOTN_ID as LKP_QUOTN_ID,
+exp_data_compare.LKP_PRTY_ID as LKP_PRTY_ID,
+exp_data_compare.LKP_PRTY_ASSET_ID as LKP_PRTY_ASSET_ID,
+exp_data_compare.LKP_PRTY_QUOTN_ROLE_CD as LKP_PRTY_QUOTN_ROLE_CD,
+exp_data_compare.LKP_ASSET_ROLE_CD as LKP_ASSET_ROLE_CD,
+exp_data_compare.source_record_id
+FROM
+exp_data_compare
+WHERE exp_data_compare.OUT_INS_UPD = ''I'' AND exp_data_compare.Out_prty_id IS NOT NULL and exp_data_compare.Out_QUOTN_ID <> 9999 and exp_data_compare.Out_PRTY_ASSET_ID <> 9999 and exp_data_compare.Out_prty_id <> 9999);
+
+
+-- Component RTR_INS_UPD_UPDATE, Type ROUTER Output Group UPDATE
+CREATE OR REPLACE TEMPORARY TABLE RTR_INS_UPD_UPDATE AS
+(SELECT
+exp_data_compare.Out_prty_id as Out_prty_id,
+exp_data_compare.Out_PRTY_ASSET_ID as Out_PRTY_ASSET_ID,
+exp_data_compare.Out_QUOTN_ID as Out_QUOTN_ID,
+exp_data_compare.PRTY_QUOTN_ROLE_CD as PRTY_QUOTN_ROLE_CD,
+exp_data_compare.PRTY_QUOTN_STRT_DT as PRTY_QUOTN_STRT_DT,
+exp_data_compare.ASSET_CNTRCT_ROLE_SBTYPE_CD as ASSET_CNTRCT_ROLE_SBTYPE_CD,
+exp_data_compare.QUOTN_ASSET_STRT_DT as QUOTN_ASSET_STRT_DT,
+exp_data_compare.ASSET_ROLE_CD as ASSET_ROLE_CD,
+exp_data_compare.PRTY_QUOTN_ASSET_STRT_DTTM as PRTY_QUOTN_ASSET_STRT_DTTM,
+exp_data_compare.PRTY_QUOTN_ASSET_END_DTTM as PRTY_QUOTN_ASSET_END_DTTM,
+exp_data_compare.PRCS_ID1 as PRCS_ID1,
+exp_data_compare.EDW_STRT_DTTM as EDW_STRT_DTTM,
+exp_data_compare.TRANS_STRT_DTTM as TRANS_STRT_DTTM,
+exp_data_compare.EDW_END_DTTM as EDW_END_DTTM,
+exp_data_compare.TRANS_END_DTTM as TRANS_END_DTTM,
+exp_data_compare.LKP_EDW_STRT_DTTM as LKP_EDW_STRT_DTTM,
+exp_data_compare.OUT_INS_UPD as OUT_INS_UPD,
+exp_data_compare.LKP_QUOTN_ID as LKP_QUOTN_ID,
+exp_data_compare.LKP_PRTY_ID as LKP_PRTY_ID,
+exp_data_compare.LKP_PRTY_ASSET_ID as LKP_PRTY_ASSET_ID,
+exp_data_compare.LKP_PRTY_QUOTN_ROLE_CD as LKP_PRTY_QUOTN_ROLE_CD,
+exp_data_compare.LKP_ASSET_ROLE_CD as LKP_ASSET_ROLE_CD,
+exp_data_compare.source_record_id
+FROM
+exp_data_compare
+WHERE exp_data_compare.OUT_INS_UPD = ''U'' AND exp_data_compare.Out_prty_id IS NOT NULL);
+
+
+-- Component upd_update_ins, Type UPDATE 
+CREATE OR REPLACE TEMPORARY TABLE upd_update_ins AS
+(
+/* UPDATE_STRATEGY_ACTION = 0 FOR INSERT / UPDATE_STRATEGY_ACTION = 1 FOR UPDATE / UPDATE_STRATEGY_ACTION = 2 FOR DELETE / UPDATE_STRATEGY_ACTION = 3 FOR REJECT */
+SELECT
+RTR_INS_UPD_UPDATE.Out_prty_id as Out_prty_id3,
+RTR_INS_UPD_UPDATE.Out_PRTY_ASSET_ID as Out_PRTY_ASSET_ID3,
+RTR_INS_UPD_UPDATE.Out_QUOTN_ID as Out_QUOTN_ID3,
+RTR_INS_UPD_UPDATE.PRTY_QUOTN_ROLE_CD as PRTY_QUOTN_ROLE_CD3,
+RTR_INS_UPD_UPDATE.PRTY_QUOTN_STRT_DT as PRTY_QUOTN_STRT_DT3,
+RTR_INS_UPD_UPDATE.ASSET_CNTRCT_ROLE_SBTYPE_CD as ASSET_CNTRCT_ROLE_SBTYPE_CD3,
+RTR_INS_UPD_UPDATE.QUOTN_ASSET_STRT_DT as QUOTN_ASSET_STRT_DT3,
+RTR_INS_UPD_UPDATE.ASSET_ROLE_CD as ASSET_ROLE_CD3,
+RTR_INS_UPD_UPDATE.PRTY_QUOTN_ASSET_STRT_DTTM as PRTY_QUOTN_ASSET_STRT_DTTM3,
+RTR_INS_UPD_UPDATE.PRTY_QUOTN_ASSET_END_DTTM as PRTY_QUOTN_ASSET_END_DTTM3,
+RTR_INS_UPD_UPDATE.PRCS_ID1 as PRCS_ID13,
+RTR_INS_UPD_UPDATE.EDW_STRT_DTTM as EDW_STRT_DTTM3,
+RTR_INS_UPD_UPDATE.TRANS_STRT_DTTM as TRANS_STRT_DTTM3,
+RTR_INS_UPD_UPDATE.EDW_END_DTTM as EDW_END_DTTM3,
+RTR_INS_UPD_UPDATE.TRANS_END_DTTM as TRANS_END_DTTM3,
+0 as UPDATE_STRATEGY_ACTION,
+RTR_INS_UPD_UPDATE.source_record_id
+FROM
+RTR_INS_UPD_UPDATE
+);
+
+
+-- Component upd_ins_new, Type UPDATE 
+CREATE OR REPLACE TEMPORARY TABLE upd_ins_new AS
+(
+/* UPDATE_STRATEGY_ACTION = 0 FOR INSERT / UPDATE_STRATEGY_ACTION = 1 FOR UPDATE / UPDATE_STRATEGY_ACTION = 2 FOR DELETE / UPDATE_STRATEGY_ACTION = 3 FOR REJECT */
+SELECT
+RTR_INS_UPD_INSERT.Out_prty_id as Out_prty_id1,
+RTR_INS_UPD_INSERT.Out_PRTY_ASSET_ID as Out_PRTY_ASSET_ID1,
+RTR_INS_UPD_INSERT.Out_QUOTN_ID as Out_QUOTN_ID1,
+RTR_INS_UPD_INSERT.PRTY_QUOTN_ROLE_CD as PRTY_QUOTN_ROLE_CD1,
+RTR_INS_UPD_INSERT.PRTY_QUOTN_STRT_DT as PRTY_QUOTN_STRT_DT1,
+RTR_INS_UPD_INSERT.ASSET_CNTRCT_ROLE_SBTYPE_CD as ASSET_CNTRCT_ROLE_SBTYPE_CD1,
+RTR_INS_UPD_INSERT.QUOTN_ASSET_STRT_DT as QUOTN_ASSET_STRT_DT1,
+RTR_INS_UPD_INSERT.ASSET_ROLE_CD as ASSET_ROLE_CD1,
+RTR_INS_UPD_INSERT.PRTY_QUOTN_ASSET_STRT_DTTM as PRTY_QUOTN_ASSET_STRT_DTTM1,
+RTR_INS_UPD_INSERT.PRTY_QUOTN_ASSET_END_DTTM as PRTY_QUOTN_ASSET_END_DTTM1,
+RTR_INS_UPD_INSERT.PRCS_ID1 as PRCS_ID11,
+RTR_INS_UPD_INSERT.EDW_STRT_DTTM as EDW_STRT_DTTM1,
+RTR_INS_UPD_INSERT.TRANS_STRT_DTTM as TRANS_STRT_DTTM1,
+RTR_INS_UPD_INSERT.EDW_END_DTTM as EDW_END_DTTM1,
+RTR_INS_UPD_INSERT.TRANS_END_DTTM as TRANS_END_DTTM1,
+0 as UPDATE_STRATEGY_ACTION,
+RTR_INS_UPD_INSERT.source_record_id
+FROM
+RTR_INS_UPD_INSERT
+);
+
+
+-- Component upd_update_upd, Type UPDATE 
+CREATE OR REPLACE TEMPORARY TABLE upd_update_upd AS
+(
+/* UPDATE_STRATEGY_ACTION = 0 FOR INSERT / UPDATE_STRATEGY_ACTION = 1 FOR UPDATE / UPDATE_STRATEGY_ACTION = 2 FOR DELETE / UPDATE_STRATEGY_ACTION = 3 FOR REJECT */
+SELECT
+RTR_INS_UPD_UPDATE.LKP_QUOTN_ID as LKP_QUOTN_ID2,
+RTR_INS_UPD_UPDATE.LKP_PRTY_ID as LKP_PRTY_ID2,
+RTR_INS_UPD_UPDATE.LKP_PRTY_ASSET_ID as LKP_PRTY_ASSET_ID2,
+RTR_INS_UPD_UPDATE.LKP_EDW_STRT_DTTM as LKP_EDW_STRT_DTTM2,
+RTR_INS_UPD_UPDATE.LKP_PRTY_QUOTN_ROLE_CD as LKP_PRTY_QUOTN_ROLE_CD2,
+RTR_INS_UPD_UPDATE.LKP_ASSET_ROLE_CD as LKP_ASSET_ROLE_CD2,
+RTR_INS_UPD_UPDATE.TRANS_STRT_DTTM as TRANS_STRT_DTTM2,
+1 as UPDATE_STRATEGY_ACTION,
+RTR_INS_UPD_UPDATE.source_record_id
+FROM
+RTR_INS_UPD_UPDATE
+);
+
+
+-- Component exp_pass_to_tgt_upd_ins, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_to_tgt_upd_ins AS
+(
+SELECT
+upd_update_ins.Out_prty_id3 as Out_prty_id3,
+upd_update_ins.Out_PRTY_ASSET_ID3 as Out_PRTY_ASSET_ID3,
+upd_update_ins.Out_QUOTN_ID3 as Out_QUOTN_ID3,
+upd_update_ins.PRTY_QUOTN_ROLE_CD3 as PRTY_QUOTN_ROLE_CD3,
+upd_update_ins.PRTY_QUOTN_STRT_DT3 as PRTY_QUOTN_STRT_DT3,
+upd_update_ins.ASSET_CNTRCT_ROLE_SBTYPE_CD3 as ASSET_CNTRCT_ROLE_SBTYPE_CD3,
+upd_update_ins.QUOTN_ASSET_STRT_DT3 as QUOTN_ASSET_STRT_DT3,
+upd_update_ins.ASSET_ROLE_CD3 as ASSET_ROLE_CD3,
+upd_update_ins.PRTY_QUOTN_ASSET_STRT_DTTM3 as PRTY_QUOTN_ASSET_STRT_DTTM3,
+upd_update_ins.PRTY_QUOTN_ASSET_END_DTTM3 as PRTY_QUOTN_ASSET_END_DTTM3,
+upd_update_ins.PRCS_ID13 as PRCS_ID13,
+upd_update_ins.EDW_STRT_DTTM3 as EDW_STRT_DTTM3,
+upd_update_ins.TRANS_STRT_DTTM3 as TRANS_STRT_DTTM3,
+upd_update_ins.EDW_END_DTTM3 as EDW_END_DTTM3,
+upd_update_ins.TRANS_END_DTTM3 as TRANS_END_DTTM3,
+upd_update_ins.source_record_id
+FROM
+upd_update_ins
+);
+
+
+-- Component exp_pass_to_tgt_ins, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_to_tgt_ins AS
+(
+SELECT
+upd_ins_new.Out_prty_id1 as Out_prty_id1,
+upd_ins_new.Out_PRTY_ASSET_ID1 as Out_PRTY_ASSET_ID1,
+upd_ins_new.Out_QUOTN_ID1 as Out_QUOTN_ID1,
+upd_ins_new.PRTY_QUOTN_ROLE_CD1 as PRTY_QUOTN_ROLE_CD1,
+upd_ins_new.PRTY_QUOTN_STRT_DT1 as PRTY_QUOTN_STRT_DT1,
+upd_ins_new.ASSET_CNTRCT_ROLE_SBTYPE_CD1 as ASSET_CNTRCT_ROLE_SBTYPE_CD1,
+upd_ins_new.QUOTN_ASSET_STRT_DT1 as QUOTN_ASSET_STRT_DT1,
+upd_ins_new.ASSET_ROLE_CD1 as ASSET_ROLE_CD1,
+upd_ins_new.PRTY_QUOTN_ASSET_STRT_DTTM1 as PRTY_QUOTN_ASSET_STRT_DTTM1,
+upd_ins_new.PRTY_QUOTN_ASSET_END_DTTM1 as PRTY_QUOTN_ASSET_END_DTTM1,
+upd_ins_new.PRCS_ID11 as PRCS_ID11,
+upd_ins_new.EDW_STRT_DTTM1 as EDW_STRT_DTTM1,
+upd_ins_new.TRANS_STRT_DTTM1 as TRANS_STRT_DTTM1,
+upd_ins_new.EDW_END_DTTM1 as EDW_END_DTTM1,
+upd_ins_new.TRANS_END_DTTM1 as TRANS_END_DTTM1,
+upd_ins_new.source_record_id
+FROM
+upd_ins_new
+);
+
+
+-- Component PRTY_QUOTN_ASSET_upd_ins, Type TARGET 
+INSERT INTO DB_T_PROD_CORE.PRTY_QUOTN_ASSET
+(
+QUOTN_ID,
+PRTY_QUOTN_ROLE_CD,
+PRTY_QUOTN_STRT_DTTM,
+PRTY_ID,
+PRTY_ASSET_ID,
+ASSET_CNTRCT_ROLE_SBTYPE_CD,
+QUOTN_ASSET_STRT_DTTM,
+ASSET_ROLE_CD,
+PRTY_QUOTN_ASSET_STRT_DTTM,
+PRTY_QUOTN_ASSET_END_DTTM,
+PRCS_ID,
+EDW_STRT_DTTM,
+EDW_END_DTTM,
+TRANS_STRT_DTTM,
+TRANS_END_DTTM
+)
+SELECT
+exp_pass_to_tgt_upd_ins.Out_QUOTN_ID3 as QUOTN_ID,
+exp_pass_to_tgt_upd_ins.PRTY_QUOTN_ROLE_CD3 as PRTY_QUOTN_ROLE_CD,
+exp_pass_to_tgt_upd_ins.PRTY_QUOTN_STRT_DT3 as PRTY_QUOTN_STRT_DTTM,
+exp_pass_to_tgt_upd_ins.Out_prty_id3 as PRTY_ID,
+exp_pass_to_tgt_upd_ins.Out_PRTY_ASSET_ID3 as PRTY_ASSET_ID,
+exp_pass_to_tgt_upd_ins.ASSET_CNTRCT_ROLE_SBTYPE_CD3 as ASSET_CNTRCT_ROLE_SBTYPE_CD,
+exp_pass_to_tgt_upd_ins.QUOTN_ASSET_STRT_DT3 as QUOTN_ASSET_STRT_DTTM,
+exp_pass_to_tgt_upd_ins.ASSET_ROLE_CD3 as ASSET_ROLE_CD,
+exp_pass_to_tgt_upd_ins.PRTY_QUOTN_ASSET_STRT_DTTM3 as PRTY_QUOTN_ASSET_STRT_DTTM,
+exp_pass_to_tgt_upd_ins.PRTY_QUOTN_ASSET_END_DTTM3 as PRTY_QUOTN_ASSET_END_DTTM,
+exp_pass_to_tgt_upd_ins.PRCS_ID13 as PRCS_ID,
+exp_pass_to_tgt_upd_ins.EDW_STRT_DTTM3 as EDW_STRT_DTTM,
+exp_pass_to_tgt_upd_ins.EDW_END_DTTM3 as EDW_END_DTTM,
+exp_pass_to_tgt_upd_ins.TRANS_STRT_DTTM3 as TRANS_STRT_DTTM,
+exp_pass_to_tgt_upd_ins.TRANS_END_DTTM3 as TRANS_END_DTTM
+FROM
+exp_pass_to_tgt_upd_ins;
+
+
+-- Component exp_pass_to_tgt_upd, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_to_tgt_upd AS
+(
+SELECT
+upd_update_upd.LKP_QUOTN_ID2 as LKP_QUOTN_ID2,
+upd_update_upd.LKP_PRTY_ID2 as LKP_PRTY_ID2,
+upd_update_upd.LKP_PRTY_ASSET_ID2 as LKP_PRTY_ASSET_ID2,
+upd_update_upd.LKP_EDW_STRT_DTTM2 as LKP_EDW_STRT_DTTM2,
+DATEADD (SECOND, -1, CURRENT_TIMESTAMP()) as EDW_END_DTTM,
+upd_update_upd.LKP_PRTY_QUOTN_ROLE_CD2 as LKP_PRTY_QUOTN_ROLE_CD2,
+upd_update_upd.LKP_ASSET_ROLE_CD2 as LKP_ASSET_ROLE_CD2,
+upd_update_upd.TRANS_STRT_DTTM2 as TRANS_STRT_DTTM2,
+DATEADD (SECOND, -1, upd_update_upd.TRANS_STRT_DTTM2) as TRANS_END_DTTM,
+upd_update_upd.source_record_id
+FROM
+upd_update_upd
+);
+
+
+-- Component PRTY_QUOTN_ASSET_ins_new, Type TARGET 
+INSERT INTO DB_T_PROD_CORE.PRTY_QUOTN_ASSET
+(
+QUOTN_ID,
+PRTY_QUOTN_ROLE_CD,
+PRTY_QUOTN_STRT_DTTM,
+PRTY_ID,
+PRTY_ASSET_ID,
+ASSET_CNTRCT_ROLE_SBTYPE_CD,
+QUOTN_ASSET_STRT_DTTM,
+ASSET_ROLE_CD,
+PRTY_QUOTN_ASSET_STRT_DTTM,
+PRTY_QUOTN_ASSET_END_DTTM,
+PRCS_ID,
+EDW_STRT_DTTM,
+EDW_END_DTTM,
+TRANS_STRT_DTTM,
+TRANS_END_DTTM
+)
+SELECT
+exp_pass_to_tgt_ins.Out_QUOTN_ID1 as QUOTN_ID,
+exp_pass_to_tgt_ins.PRTY_QUOTN_ROLE_CD1 as PRTY_QUOTN_ROLE_CD,
+exp_pass_to_tgt_ins.PRTY_QUOTN_STRT_DT1 as PRTY_QUOTN_STRT_DTTM,
+exp_pass_to_tgt_ins.Out_prty_id1 as PRTY_ID,
+exp_pass_to_tgt_ins.Out_PRTY_ASSET_ID1 as PRTY_ASSET_ID,
+exp_pass_to_tgt_ins.ASSET_CNTRCT_ROLE_SBTYPE_CD1 as ASSET_CNTRCT_ROLE_SBTYPE_CD,
+exp_pass_to_tgt_ins.QUOTN_ASSET_STRT_DT1 as QUOTN_ASSET_STRT_DTTM,
+exp_pass_to_tgt_ins.ASSET_ROLE_CD1 as ASSET_ROLE_CD,
+exp_pass_to_tgt_ins.PRTY_QUOTN_ASSET_STRT_DTTM1 as PRTY_QUOTN_ASSET_STRT_DTTM,
+exp_pass_to_tgt_ins.PRTY_QUOTN_ASSET_END_DTTM1 as PRTY_QUOTN_ASSET_END_DTTM,
+exp_pass_to_tgt_ins.PRCS_ID11 as PRCS_ID,
+exp_pass_to_tgt_ins.EDW_STRT_DTTM1 as EDW_STRT_DTTM,
+exp_pass_to_tgt_ins.EDW_END_DTTM1 as EDW_END_DTTM,
+exp_pass_to_tgt_ins.TRANS_STRT_DTTM1 as TRANS_STRT_DTTM,
+exp_pass_to_tgt_ins.TRANS_END_DTTM1 as TRANS_END_DTTM
+FROM
+exp_pass_to_tgt_ins;
+
+
+-- Component PRTY_QUOTN_ASSET_upd, Type TARGET 
+MERGE INTO DB_T_PROD_CORE.PRTY_QUOTN_ASSET
+USING exp_pass_to_tgt_upd ON (PRTY_QUOTN_ASSET.QUOTN_ID = exp_pass_to_tgt_upd.LKP_QUOTN_ID2 AND PRTY_QUOTN_ASSET.PRTY_QUOTN_ROLE_CD = exp_pass_to_tgt_upd.LKP_PRTY_QUOTN_ROLE_CD2 AND PRTY_QUOTN_ASSET.PRTY_ID = exp_pass_to_tgt_upd.LKP_PRTY_ID2 AND PRTY_QUOTN_ASSET.PRTY_ASSET_ID = exp_pass_to_tgt_upd.LKP_PRTY_ASSET_ID2 AND PRTY_QUOTN_ASSET.ASSET_ROLE_CD = exp_pass_to_tgt_upd.LKP_ASSET_ROLE_CD2 AND PRTY_QUOTN_ASSET.EDW_STRT_DTTM = exp_pass_to_tgt_upd.LKP_EDW_STRT_DTTM2)
+WHEN MATCHED THEN UPDATE
+SET
+QUOTN_ID = exp_pass_to_tgt_upd.LKP_QUOTN_ID2,
+PRTY_QUOTN_ROLE_CD = exp_pass_to_tgt_upd.LKP_PRTY_QUOTN_ROLE_CD2,
+PRTY_ID = exp_pass_to_tgt_upd.LKP_PRTY_ID2,
+PRTY_ASSET_ID = exp_pass_to_tgt_upd.LKP_PRTY_ASSET_ID2,
+ASSET_ROLE_CD = exp_pass_to_tgt_upd.LKP_ASSET_ROLE_CD2,
+EDW_STRT_DTTM = exp_pass_to_tgt_upd.LKP_EDW_STRT_DTTM2,
+EDW_END_DTTM = exp_pass_to_tgt_upd.EDW_END_DTTM,
+TRANS_STRT_DTTM = exp_pass_to_tgt_upd.TRANS_STRT_DTTM2,
+TRANS_END_DTTM = exp_pass_to_tgt_upd.TRANS_END_DTTM;
+
+
+END; ';

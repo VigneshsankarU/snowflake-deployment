@@ -1,0 +1,89 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_ECTL_BATCH_INFO_INS2025("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' BEGIN 
+
+-- Component SQ_Shortcut_to_ECTL_BATCH_INFO, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_Shortcut_to_ECTL_BATCH_INFO AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as ECTL_BATCH_ID,
+$2 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT TOP 1 1 as "ECTL_BATCH_ID" FROM DB_T_CTRL_FIN_PROD.ECTL_BATCH_INFO
+) SRC
+)
+);
+
+
+-- Component exp_lookup_batch, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_lookup_batch AS
+(
+SELECT
+''Y'' as out_BATCH_IND,
+4 as out_PROJ_ID,
+CURRENT_TIMESTAMP as out_BATCH_START_TIME,
+SQ_Shortcut_to_ECTL_BATCH_INFO.source_record_id
+FROM
+SQ_Shortcut_to_ECTL_BATCH_INFO
+);
+
+
+-- Component LKP_ECTL_BATCH_INFO, Type LOOKUP 
+CREATE OR REPLACE TEMPORARY TABLE LKP_ECTL_BATCH_INFO AS
+(
+SELECT
+LKP.ECTL_BATCH_ID,
+exp_lookup_batch.source_record_id,
+ROW_NUMBER() OVER(PARTITION BY exp_lookup_batch.source_record_id ORDER BY LKP.ECTL_BATCH_ID asc) RNK
+FROM
+exp_lookup_batch
+LEFT JOIN (
+SELECT
+ECTL_BATCH_ID,
+ECTL_PROJ_ID,
+ECTL_ACTIVE_IND
+FROM DB_T_CTRL_FIN_PROD.ECTL_BATCH_INFO
+) LKP ON LKP.ECTL_PROJ_ID = exp_lookup_batch.out_PROJ_ID AND LKP.ECTL_ACTIVE_IND = exp_lookup_batch.out_BATCH_IND
+QUALIFY RNK = 1
+);
+
+
+-- Component exp_ABORT_BATCH, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_ABORT_BATCH AS
+(
+SELECT
+CASE WHEN LKP_ECTL_BATCH_INFO.ECTL_BATCH_ID IS NOT NULL THEN 
+null --RAISE_ERROR(''Batch already exists for Federation'') 
+ELSE null END as var_abort_batch,
+exp_lookup_batch.out_PROJ_ID as PROJ_ID,
+exp_lookup_batch.out_BATCH_IND as BATCH_ACTIVE_IND,
+exp_lookup_batch.out_BATCH_START_TIME as BATCH_START_TIME,
+exp_lookup_batch.source_record_id
+FROM
+exp_lookup_batch
+INNER JOIN LKP_ECTL_BATCH_INFO ON exp_lookup_batch.source_record_id = LKP_ECTL_BATCH_INFO.source_record_id
+);
+
+
+-- Component ECTL_BATCH_INFO_INS, Type TARGET 
+INSERT INTO DB_T_CTRL_FIN_PROD.ECTL_BATCH_INFO
+(
+ECTL_PROJ_ID,
+ECTL_BATCH_START_TS,
+ECTL_ACTIVE_IND,
+ECTL_BATCH_ID  
+)
+SELECT
+exp_ABORT_BATCH.PROJ_ID as ECTL_PROJ_ID,
+exp_ABORT_BATCH.BATCH_START_TIME as ECTL_BATCH_START_TS,
+exp_ABORT_BATCH.BATCH_ACTIVE_IND as ECTL_ACTIVE_IND,
+''-1''
+FROM
+exp_ABORT_BATCH;
+
+
+END; ';

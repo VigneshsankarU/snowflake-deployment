@@ -1,0 +1,695 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_POST_BALANCING_FIN_AGG_MTHLY("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' BEGIN 
+
+-- PIPELINE START FOR 1
+
+-- Component SQ_POST_BALANCING, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_POST_BALANCING AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as ECTL_BATCH_ID,
+$2 as MO_ID,
+$3 as CALC_SRC,
+$4 as TBL_NM,
+$5 as METRIC_NM,
+$6 as METRIC_CNT,
+$7 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT 
+
+E.ECTL_BATCH_ID,
+
+S.MO_ID,
+
+''AGG'' AS CALC_SRC,
+
+CAST(''AGG_FIN_SALES_PRODUCT'' AS VARCHAR(50)) AS TBL_NM,
+
+CASE 
+
+WHEN GROUPING(''WP'') = 0 THEN S.SALES_ST_CD||'': WP: ''||TRIM(S.PRODUCT_CD)||'': BI Premiums''
+
+WHEN GROUPING(''EP'') = 0 THEN S.SALES_ST_CD||'': EP: ''||TRIM(S.PRODUCT_CD)||'': BI Premiums''
+
+WHEN GROUPING(''IL'') = 0 THEN S.SALES_ST_CD||'': IL: ''||TRIM(S.PRODUCT_CD)||'': BI Losses''
+
+WHEN GROUPING(''PLAE'') = 0 THEN S.SALES_ST_CD||'': AE: ''||TRIM(S.PRODUCT_CD)||'': BI Loss Adjustment Expense''
+
+END AS ADJUSTMENTS_NAME, 
+
+CASE 
+
+WHEN GROUPING(''WP'') = 0 THEN SUM(S.DIRECT_WRIT_PREM)
+
+WHEN GROUPING(''EP'') = 0 THEN SUM(S.ERND_PREM)
+
+WHEN GROUPING(''IL'') = 0 THEN SUM(S.REPORTED_LOSS)
+
+WHEN GROUPING(''PLAE'') = 0 THEN SUM(S.PAID_LAE)
+
+END AS ADJ_AMT 
+
+FROM DB_T_CORE_FIN_PROD.AGG_FIN_SALES_PRODUCT AS S 
+
+INNER JOIN 
+
+DB_T_CTRL_FIN_PROD.ECTL_BATCH_INFO AS E ON 1=1 AND E.ECTL_ACTIVE_IND = ''Y'' AND E.ECTL_PROJ_ID = 1 
+
+WHERE S.SALES_ST_CD IN (''AL'',''GA'',''MS'') AND S.MO_ID IN 
+
+(SELECT	
+
+SUM(CASE 
+
+WHEN ECTL_PARAM_ID = 1 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)*100 
+
+WHEN ECTL_PARAM_ID = 2 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)
+
+ELSE 0 END) AS MO_ID
+
+FROM DB_T_CTRL_FIN_PROD.ECTL_PRGM_PARAM )
+
+GROUP BY GROUPING SETS (
+
+(E.ECTL_BATCH_ID,S.MO_ID,S.SALES_ST_CD,S.PRODUCT_CD,''WP''),
+
+(E.ECTL_BATCH_ID,S.MO_ID,S.SALES_ST_CD,S.PRODUCT_CD,''EP''),
+
+(E.ECTL_BATCH_ID,S.MO_ID,S.SALES_ST_CD,S.PRODUCT_CD,''IL''),
+
+(E.ECTL_BATCH_ID,S.MO_ID,S.SALES_ST_CD,S.PRODUCT_CD,''PLAE'')
+
+)
+
+
+
+UNION
+
+
+
+SELECT 
+
+E.ECTL_BATCH_ID,
+
+EXTRACT(YEAR FROM F.CAL_DT)*100+EXTRACT(MONTH FROM F.CAL_DT),
+
+''AGG'' AS CALC_SRC,
+
+CAST(''F_FIN_PREM_LOSS_MTHLY'' AS VARCHAR(50)) AS TBL_NM,
+
+CASE 
+
+WHEN GROUPING(''WP'') = 0 THEN D.ST_CD||'': WP: ''||TRIM(D.PROD_CD)||'': BI Premiums''
+
+WHEN GROUPING(''EP'') = 0 THEN D.ST_CD||'': EP: ''||TRIM(D.PROD_CD)||'': BI Premiums''
+
+END AS ADJUSTMENTS_NAME, 
+
+CASE 
+
+WHEN GROUPING(''WP'') = 0 THEN SUM(F.DIRECT_WRIT_PREM)
+
+WHEN GROUPING(''EP'') = 0 THEN SUM(F.ERND_PREM)
+
+END AS ADJ_AMT 
+
+FROM DB_T_PROD_STAG.D_FIN_PREM_LOSS_MTHLY AS D
+
+INNER JOIN 
+
+DB_T_PROD_STAG.F_FIN_PREM_LOSS_MTHLY AS F
+
+ON D.DIM_SKEY = F.DIM_SKEY 
+
+INNER JOIN 
+
+DB_T_CTRL_FIN_PROD.ECTL_BATCH_INFO AS E ON 1=1 AND E.ECTL_ACTIVE_IND = ''Y'' AND E.ECTL_PROJ_ID = 1 
+
+WHERE F.SRC_TYPE_CD = ''GW'' AND D.ST_CD IN (''AL'',''GA'',''MS'') AND EXTRACT(YEAR FROM F.CAL_DT)*100+EXTRACT(MONTH FROM F.CAL_DT) IN 
+
+(SELECT	
+
+SUM(CASE 
+
+WHEN ECTL_PARAM_ID = 1 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)*100 
+
+WHEN ECTL_PARAM_ID = 2 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)
+
+ELSE 0 END) AS MO_ID
+
+FROM DB_T_CTRL_FIN_PROD.ECTL_PRGM_PARAM )
+
+GROUP BY GROUPING SETS (
+
+(E.ECTL_BATCH_ID,EXTRACT(YEAR FROM F.CAL_DT)*100+EXTRACT(MONTH FROM F.CAL_DT),D.ST_CD,D.PROD_CD,''WP''),
+
+(E.ECTL_BATCH_ID,EXTRACT(YEAR FROM F.CAL_DT)*100+EXTRACT(MONTH FROM F.CAL_DT),D.ST_CD,D.PROD_CD,''EP'')
+
+)
+
+
+
+UNION
+
+
+
+
+
+SELECT 
+
+E.ECTL_BATCH_ID,
+
+CAST(YEAR1 AS INTEGER)*100+MONTH_ID MO_ID,
+
+''MAN'' AS CALC_SRC,
+
+CAST(''FIN_MANUAL_ENTRIES_LOSS_TXN'' AS VARCHAR(50)) AS TBL_NM,
+
+TRIM(STATE)||'': ''||METRIC_SHORT_NM||'': ''||TRIM(A.PRODUCT)||'': Manual Losses'' AS ADJUSTMENTS_NAME,
+
+SUM(MONETARY_AMOUNT) AS ADJ_AMT 
+
+FROM DB_T_CORE_FIN_PROD.FIN_MANUAL_ENTRIES_LOSS_TXN   A
+
+INNER  JOIN 
+
+(SELECT DISTINCT ACCT_NBR, CASE WHEN METRIC_SHORT_NM = ''LOSSRES'' THEN ''CR'' ELSE TRIM(METRIC_SHORT_NM) END AS METRIC_SHORT_NM 
+
+FROM DB_T_STAG_FIN_PROD.FIN_METRIC_ACCT_NBR_LKUP WHERE METRIC_SHORT_NM IN (''PL'',''LOSSRES''))  PL
+
+ON CAST(ACCOUNT1 AS INTEGER)= PL.ACCT_NBR
+
+INNER JOIN 
+
+DB_T_CTRL_FIN_PROD.ECTL_BATCH_INFO AS E ON 1=1 AND E.ECTL_ACTIVE_IND = ''Y'' AND E.ECTL_PROJ_ID = 1 
+
+WHERE 
+
+TRIM(STATE) IN (''AL'',''GA'',''MS'') 
+
+AND MO_ID IN 
+
+(SELECT	
+
+SUM(CASE 
+
+WHEN ECTL_PARAM_ID = 1 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)*100 
+
+WHEN ECTL_PARAM_ID = 2 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)
+
+ELSE 0 END) AS MO_ID
+
+FROM DB_T_CTRL_FIN_PROD.ECTL_PRGM_PARAM )
+
+AND MOD(MO_ID, 100) BETWEEN 1
+AND 12
+
+GROUP BY 1,2,3,4,5 
+
+HAVING ADJ_AMT <> 0
+
+
+
+UNION
+
+
+
+SELECT 
+
+E.ECTL_BATCH_ID,
+
+CAST(YEAR1 AS INTEGER)*100+MONTH_ID MO_ID,
+
+''MAN'' AS CALC_SRC,
+
+CAST(''FIN_MANUAL_ENTRIES_PREMIUM_TXN'' AS VARCHAR(50)) AS TBL_NM,
+
+TRIM(STATE)||'': ''||METRIC_SHORT_NM||'': ''||TRIM(A.PRODUCT)||'': Manual Premiums'' AS ADJUSTMENTS_NAME,
+
+SUM(MONETARY_AMOUNT) AS ADJ_AMT 
+
+FROM DB_T_CORE_FIN_PROD.FIN_MANUAL_ENTRIES_PREMIUM_TXN   A
+
+INNER  JOIN 
+
+(SELECT DISTINCT ACCT_NBR, ''WP'' AS METRIC_SHORT_NM FROM DB_T_STAG_FIN_PROD.FIN_METRIC_ACCT_NBR_LKUP WHERE METRIC_SHORT_NM  = ''DWP''
+
+UNION 
+
+SELECT DISTINCT ''400350'' AS ACCT_NBR, ''UP'' AS METRIC_SHORT_NM FROM DB_T_STAG_FIN_PROD.FIN_METRIC_ACCT_NBR_LKUP WHERE METRIC_SHORT_NM  = ''DWP''
+
+UNION 
+
+SELECT DISTINCT ''400353'' AS ACCT_NBR, ''UP'' AS METRIC_SHORT_NM FROM DB_T_STAG_FIN_PROD.FIN_METRIC_ACCT_NBR_LKUP WHERE METRIC_SHORT_NM  = ''DWP'')  PL
+
+ON CAST(ACCOUNT1 AS INTEGER)= PL.ACCT_NBR 
+
+INNER JOIN 
+
+DB_T_CTRL_FIN_PROD.ECTL_BATCH_INFO AS E ON 1=1 AND E.ECTL_ACTIVE_IND = ''Y'' AND E.ECTL_PROJ_ID = 1
+
+WHERE 
+
+TRIM(STATE) IN (''AL'',''GA'',''MS'') 
+
+AND MO_ID IN 
+
+(SELECT	
+
+SUM(CASE 
+
+WHEN ECTL_PARAM_ID = 1 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)*100 
+
+WHEN ECTL_PARAM_ID = 2 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)
+
+ELSE 0 END) AS MO_ID
+
+FROM DB_T_CTRL_FIN_PROD.ECTL_PRGM_PARAM )
+
+AND MOD(MO_ID, 100) BETWEEN 1
+AND 12
+
+GROUP BY 1,2,3,4,5 
+
+HAVING ADJ_AMT <> 0
+
+
+
+UNION
+
+
+
+SELECT 
+
+E.ECTL_BATCH_ID,
+
+CAST(FISCAL_YEAR AS INTEGER)*100+ACCOUNTING_PERIOD MO_ID,
+
+''ADB'' AS CALC_SRC,
+
+CAST(''PS_ALF_REPOS_ADB_S'' AS VARCHAR(50)) AS TBL_NM,
+
+CASE WHEN TRIM(ALF_STATE_CD) = ''01'' THEN ''AL''
+
+WHEN TRIM(ALF_STATE_CD) = ''10'' THEN ''GA''
+
+WHEN TRIM(ALF_STATE_CD) = ''28'' THEN ''MS'' ELSE TRIM(ALF_STATE_CD) END||'': ''||METRIC_SHORT_NM||'': ''||TRIM(A.PRODUCT)||'': ADB Losses'' AS ADJUSTMENTS_NAME,
+
+SUM(MONETARY_AMOUNT) AS ADJ_AMT 
+
+FROM DB_T_CORE_FIN_PROD.PS_ALF_REPOS_ADB_S   A
+
+INNER  JOIN 
+
+(SELECT DISTINCT ACCT_NBR, CASE WHEN METRIC_SHORT_NM = ''LOSSRES'' THEN ''CR'' ELSE TRIM(METRIC_SHORT_NM) END AS METRIC_SHORT_NM 
+
+FROM DB_T_STAG_FIN_PROD.FIN_METRIC_ACCT_NBR_LKUP WHERE METRIC_SHORT_NM IN (''PL'',''LOSSRES''))  PL
+
+ON CAST(ACCOUNT_CD AS INTEGER)= PL.ACCT_NBR
+
+INNER JOIN 
+
+DB_T_CTRL_FIN_PROD.ECTL_BATCH_INFO AS E ON 1=1 AND E.ECTL_ACTIVE_IND = ''Y'' AND E.ECTL_PROJ_ID = 1
+
+WHERE 
+
+A.GL_DISTRIB_STATUS = ''D'' 
+
+AND TRIM(ALF_STATE_CD) IN (''01'',''10'',''28'') 
+
+AND MO_ID IN 
+
+(SELECT	
+
+SUM(CASE 
+
+WHEN ECTL_PARAM_ID = 1 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)*100 
+
+WHEN ECTL_PARAM_ID = 2 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)
+
+ELSE 0 END) AS MO_ID
+
+FROM DB_T_CTRL_FIN_PROD.ECTL_PRGM_PARAM )
+
+AND MOD(MO_ID, 100) BETWEEN 1
+AND 12
+
+GROUP BY 1,2,3,4,5 
+
+HAVING ADJ_AMT<>0
+) SRC
+)
+);
+
+
+-- Component exp_passthrough, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_passthrough AS
+(
+SELECT
+SQ_POST_BALANCING.ECTL_BATCH_ID as ECTL_BATCH_ID,
+SQ_POST_BALANCING.MO_ID as MO_ID,
+SQ_POST_BALANCING.CALC_SRC as CALC_SRC,
+SQ_POST_BALANCING.TBL_NM as TBL_NM,
+SQ_POST_BALANCING.METRIC_NM as METRIC_NM,
+SQ_POST_BALANCING.METRIC_CNT as METRIC_CNT,
+SQ_POST_BALANCING.source_record_id
+FROM
+SQ_POST_BALANCING
+);
+
+
+-- Component AGG_COUNT_BALANCE, Type TARGET 
+INSERT INTO DB_T_CORE_FIN_PROD.AGG_COUNT_BALANCE
+(
+ECTL_BATCH_ID,
+MO_ID,
+CALC_SRC,
+TBL_NM,
+METRIC_NM,
+METRIC_CNT
+)
+SELECT
+exp_passthrough.ECTL_BATCH_ID as ECTL_BATCH_ID,
+exp_passthrough.MO_ID as MO_ID,
+exp_passthrough.CALC_SRC as CALC_SRC,
+exp_passthrough.TBL_NM as TBL_NM,
+exp_passthrough.METRIC_NM as METRIC_NM,
+exp_passthrough.METRIC_CNT as METRIC_CNT
+FROM
+exp_passthrough;
+
+
+-- PIPELINE END FOR 1
+
+-- PIPELINE START FOR 2
+
+-- Component SQ_Written_earned_premium_recon, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_Written_earned_premium_recon AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as MO_ID,
+$2 as JRNL_WP,
+$3 as AGG_WP,
+$4 as MAN_WP,
+$5 as RECON_WP,
+$6 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+/* written DB_T_PROD_COMN.premium reconciliation at month level */
+SELECT MO_ID,/*  SUBSTR(METRIC_NM,1,2) AS ST_CD, */
+SUM(CASE WHEN CALC_SRC = ''JRNL'' AND SUBSTR(METRIC_NM,17,50) = ''GL Query of P&C Premiums'' THEN METRIC_CNT*-1 ELSE 0 END) AS JRNL_WP,
+
+SUM(CASE WHEN CALC_SRC = ''AGG'' AND SUBSTR(METRIC_NM,17,50) = ''BI Premiums'' THEN METRIC_CNT ELSE 0 END) AS AGG_WP,
+
+SUM(CASE WHEN CALC_SRC = ''MAN'' AND SUBSTR(METRIC_NM,17,50) = ''Manual Premiums'' THEN METRIC_CNT*-1 ELSE 0 END) AS MAN_WP,
+
+JRNL_WP-(AGG_WP+MAN_WP) AS RECON_WP
+
+FROM DB_T_CORE_FIN_PROD.AGG_COUNT_BALANCE WHERE SUBSTR(METRIC_NM,5,2) = ''WP'' 
+
+AND MO_ID IN 
+
+(SELECT	
+
+SUM(CASE 
+
+WHEN ECTL_PARAM_ID = 1 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)*100 
+
+WHEN ECTL_PARAM_ID = 2 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)
+
+ELSE 0 END) AS MO_ID
+
+FROM DB_T_CTRL_FIN_PROD.ECTL_PRGM_PARAM ) and (METRIC_NM NOT LIKE ''%CA0000: Manual Premiums%'' and METRIC_NM NOT LIKE ''%A00000: Manual Premiums%'')
+
+GROUP BY 1 HAVING RECON_WP < -5000 or RECON_WP>5000
+
+
+
+UNION
+
+/* earned DB_T_PROD_COMN.premium reconciliation at MONTH level */
+SELECT MO_ID,/* SUBSTR(METRIC_NM,1,2) AS ST_CD, */
+SUM(CASE WHEN CALC_SRC = ''JRNL'' AND SUBSTR(METRIC_NM,5,2) = ''EP'' AND SUBSTR(METRIC_NM,17,50) = ''GL Query of P&C Premiums'' THEN METRIC_CNT*-1 ELSE 0 END) AS JRNL_EP,
+
+SUM(CASE WHEN CALC_SRC = ''AGG'' AND SUBSTR(METRIC_NM,5,2) = ''EP'' AND SUBSTR(METRIC_NM,17,50) = ''BI Premiums'' THEN METRIC_CNT ELSE 0 END) AS AGG_EP,
+
+SUM(CASE WHEN CALC_SRC = ''MAN'' AND SUBSTR(METRIC_NM,5,2) IN (''WP'',''UP'') AND SUBSTR(METRIC_NM,17,50) = ''Manual Premiums'' THEN METRIC_CNT*-1 ELSE 0 END) AS MAN_EP,
+
+JRNL_EP-(AGG_EP+MAN_EP) AS RECON_EP
+
+FROM DB_T_CORE_FIN_PROD.AGG_COUNT_BALANCE WHERE SUBSTR(METRIC_NM,5,2) IN (''WP'',''UP'',''EP'') 
+
+AND MO_ID IN 
+
+(SELECT	
+
+SUM(CASE 
+
+WHEN ECTL_PARAM_ID = 1 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)*100 
+
+WHEN ECTL_PARAM_ID = 2 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)
+
+ELSE 0 END) AS MO_ID
+
+FROM DB_T_CTRL_FIN_PROD.ECTL_PRGM_PARAM ) and (METRIC_NM NOT LIKE ''%CA0000: Manual Premiums%'' and METRIC_NM NOT LIKE ''%A00000: Manual Premiums%'')
+
+GROUP BY 1 HAVING RECON_EP <-5000 or RECON_EP>5000
+) SRC
+)
+);
+
+
+-- Component expr_earned_writtent_premium_recon, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE expr_earned_writtent_premium_recon AS
+(
+SELECT
+CASE WHEN ( SQ_Written_earned_premium_recon.MO_ID OR SQ_Written_earned_premium_recon.JRNL_WP OR SQ_Written_earned_premium_recon.AGG_WP OR 
+SQ_Written_earned_premium_recon.MAN_WP OR SQ_Written_earned_premium_recon.RECON_WP ) > 0 THEN 
+--
+--RAISE_ERROR(''Earned_Written_Premium-Balancing Issues in Reconciliation'') 
+''E'' ELSE '''' END as o_output,
+SQ_Written_earned_premium_recon.source_record_id
+FROM
+SQ_Written_earned_premium_recon
+);
+
+IF (
+  (
+    SELECT
+      COUNT(o_output)
+    FROM
+      expr_earned_writtent_premium_recon
+    WHERE
+      o_output = ''E''
+  ) > 0
+) THEN
+RETURN system$error_message(''Earned_Written_Premium-Balancing Issues in Reconciliation'');
+END IF;
+-- Component tgt_Post_balancing_mnthly, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE tgt_Post_balancing_mnthly AS
+(
+SELECT
+expr_earned_writtent_premium_recon.o_output as output
+FROM
+expr_earned_writtent_premium_recon
+);
+
+
+-- Component tgt_Post_balancing_mnthly, Type EXPORT_DATA Exporting data
+;
+COPY INTO @my_internal_stage/my_export_folder/tgt_Post_balancing_mnthly_
+FROM (SELECT * FROM tgt_Post_balancing_mnthly)
+HEADER = TRUE
+OVERWRITE = TRUE;
+
+-- PIPELINE END FOR 2
+
+-- PIPELINE START FOR 3
+
+-- Component SQ_incurred_loss_recon, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_incurred_loss_recon AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as MO_ID,
+$2 as JRNL_WP,
+$3 as AGG_WP,
+$4 as MAN_WP,
+$5 as RECON_WP,
+$6 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+/* incurred loss reconciliation at Month level */
+SELECT MO_ID,/* SUBSTR(METRIC_NM,1,2) AS ST_CD, */
+SUM(CASE WHEN CALC_SRC = ''JRNL'' AND TRIM(SUBSTR(METRIC_NM,5,2)) IN (''PL'',''CR'') AND TRIM(SUBSTR(METRIC_NM,17,50)) = ''GL Query of P&C Losses'' THEN METRIC_CNT ELSE 0 END) AS JRNL_IL,
+
+SUM(CASE WHEN CALC_SRC = ''AGG'' AND TRIM(SUBSTR(METRIC_NM,5,2)) = ''IL'' AND TRIM(SUBSTR(METRIC_NM,17,50)) = ''BI Losses'' THEN METRIC_CNT ELSE 0 END) AS AGG_IL,
+
+SUM(CASE WHEN CALC_SRC = ''MAN'' AND TRIM(SUBSTR(METRIC_NM,5,2)) IN (''PL'',''CR'') AND TRIM(SUBSTR(METRIC_NM,17,50)) = ''Manual Losses'' THEN METRIC_CNT ELSE 0 END) AS MAN_IL,
+
+SUM(CASE WHEN CALC_SRC = ''ADB'' AND TRIM(SUBSTR(METRIC_NM,5,2)) IN (''PL'',''CR'') AND TRIM(SUBSTR(METRIC_NM,17,50)) = ''ADB Losses'' THEN METRIC_CNT ELSE 0 END) AS ADB_IL,
+
+JRNL_IL-(AGG_IL+MAN_IL+ADB_IL) AS RECON_IL
+
+FROM DB_T_CORE_FIN_PROD.AGG_COUNT_BALANCE WHERE TRIM(SUBSTR(METRIC_NM,5,2)) IN (''PL'',''CR'',''IL'') 
+
+AND MO_ID IN 
+
+(SELECT	
+
+SUM(CASE 
+
+WHEN ECTL_PARAM_ID = 1 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)*100 
+
+WHEN ECTL_PARAM_ID = 2 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)
+
+ELSE 0 END) AS MO_ID
+
+FROM DB_T_CTRL_FIN_PROD.ECTL_PRGM_PARAM ) 
+
+GROUP BY 1 HAVING RECON_IL < -5000 or RECON_IL>5000
+) SRC
+)
+);
+
+
+-- Component expr_incurred_loss_recon, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE expr_incurred_loss_recon AS
+(
+SELECT
+CASE WHEN ( SQ_incurred_loss_recon.MO_ID OR SQ_incurred_loss_recon.JRNL_WP OR SQ_incurred_loss_recon.AGG_WP OR SQ_incurred_loss_recon.MAN_WP OR SQ_incurred_loss_recon.RECON_WP ) > 0 THEN 
+''E'' ELSE '''' END as o_output,
+SQ_incurred_loss_recon.source_record_id
+FROM
+SQ_incurred_loss_recon
+);
+
+IF (
+  (
+    SELECT
+      COUNT(o_output)
+    FROM
+      expr_incurred_loss_recon
+    WHERE
+      o_output = ''E''
+  ) > 0
+) THEN
+RETURN system$error_message(''Incurred_Loss-Balancing Issues in Reconciliation'');
+END IF;
+
+
+
+-- Component tgt_Post_balancing_incurred_loss_recon, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE tgt_Post_balancing_incurred_loss_recon AS
+(
+SELECT
+expr_incurred_loss_recon.o_output as output
+FROM
+expr_incurred_loss_recon
+);
+
+
+-- Component tgt_Post_balancing_incurred_loss_recon, Type EXPORT_DATA Exporting data
+;
+COPY INTO @my_internal_stage/my_export_folder/tgt_Post_balancing_incurred_loss_recon_
+FROM (SELECT * FROM tgt_Post_balancing_incurred_loss_recon)
+HEADER = TRUE
+OVERWRITE = TRUE;
+
+
+-- PIPELINE END FOR 3
+
+-- PIPELINE START FOR 4
+
+-- Component SQ_incurred_loss_adjustment_recon, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_incurred_loss_adjustment_recon AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as MO_ID,
+$2 as JRNL_WP,
+$3 as AGG_WP,
+$4 as MAN_WP,
+$5 as RECON_WP,
+$6 as source_record_id
+FROM (
+SELECT SRC.* ,row_number() over (order by 1) AS source_record_id FROM (
+/* loss adjustment expense reconciliation at MONTH level */
+SELECT MO_ID,
+/* SUBSTR(METRIC_NM,1,2) AS ST_CD, */
+SUM(CASE WHEN CALC_SRC = ''JRNL'' THEN METRIC_CNT ELSE 0 END) AS JRNL_LAE,
+
+SUM(CASE WHEN CALC_SRC = ''AGG'' THEN METRIC_CNT ELSE 0 END) AS AGG_LAE,
+'''' MAN_WP,
+JRNL_LAE-AGG_LAE AS RECON_LAE
+
+FROM DB_T_CORE_FIN_PROD.AGG_COUNT_BALANCE WHERE SUBSTR(METRIC_NM,5,2)  = ''AE'' 
+
+AND MO_ID IN 
+
+(SELECT	
+
+SUM(CASE 
+
+WHEN ECTL_PARAM_ID = 1 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)*100 
+
+WHEN ECTL_PARAM_ID = 2 THEN  CAST(ECTL_PARAM_VALUE AS INTEGER)
+
+ELSE 0 END) AS MO_ID
+
+FROM DB_T_CTRL_FIN_PROD.ECTL_PRGM_PARAM ) 
+
+GROUP BY 1  HAVING RECON_LAE <-5000 or RECON_LAE> 50000
+) SRC
+)
+);
+
+
+-- Component expr_incurred_loss_adjustment_recon, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE expr_incurred_loss_adjustment_recon AS
+(
+SELECT
+CASE WHEN ( SQ_incurred_loss_adjustment_recon.MO_ID OR SQ_incurred_loss_adjustment_recon.JRNL_WP OR SQ_incurred_loss_adjustment_recon.AGG_WP OR SQ_incurred_loss_adjustment_recon.MAN_WP OR SQ_incurred_loss_adjustment_recon.RECON_WP ) > 0 THEN ''E''
+--RAISE_ERROR(''Incurred_Loss_Adjustment-Balancing Issues in Reconciliation'') 
+ELSE '''' END as o_output,
+SQ_incurred_loss_adjustment_recon.source_record_id
+FROM
+SQ_incurred_loss_adjustment_recon
+);
+
+IF (
+  (
+    SELECT
+      COUNT(o_output)
+    FROM
+      expr_incurred_loss_adjustment_recon
+    WHERE
+      o_output = ''E''
+  ) > 0
+) THEN
+RETURN system$error_message(''Incurred_Loss_Adjustment-Balancing Issues in Reconciliation'');
+END IF;
+
+-- Component tgt_Post_balancing_loss_adjustment, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE tgt_Post_balancing_loss_adjustment AS
+(
+SELECT
+expr_incurred_loss_adjustment_recon.o_output as output
+FROM
+expr_incurred_loss_adjustment_recon
+);
+
+
+-- Component tgt_Post_balancing_loss_adjustment, Type EXPORT_DATA Exporting data
+;
+COPY INTO @my_internal_stage/my_export_folder/tgt_Post_balancing_loss_adjustment_
+FROM (SELECT * FROM tgt_Post_balancing_loss_adjustment)
+HEADER = TRUE
+OVERWRITE = TRUE;
+
+-- PIPELINE END FOR 4
+
+END; ';

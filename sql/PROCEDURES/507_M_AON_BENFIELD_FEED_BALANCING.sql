@@ -1,0 +1,693 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_AON_BENFIELD_FEED_BALANCING("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS '
+DECLARE
+   p_MOID varchar;
+   p10 varchar;
+   p_prcs_id_fltr varchar;
+   p12 varchar;
+   p11 varchar;
+--   p_feed_date date;
+BEGIN
+
+
+
+   p_MOID := (SELECT param_value FROM control_params WHERE run_id = :run_id AND param_name = ''p_MOID'' LIMIT 1);
+   p10 := (SELECT param_value FROM control_params WHERE run_id = :run_id AND param_name = ''10'' LIMIT 1);
+   p_prcs_id_fltr := (SELECT param_value FROM control_params WHERE run_id = :run_id AND param_name = ''p_prcs_id_fltr'' LIMIT 1);
+   p12 := (SELECT param_value FROM control_params WHERE run_id = :run_id AND param_name = ''12'' LIMIT 1);
+   p11 := (SELECT param_value FROM control_params WHERE run_id = :run_id AND param_name = ''11'' LIMIT 1);
+--   p_feed_date := (select current_date);
+
+-- Component SQ_AON_BENFIELD_PRPTY_FEED, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_AON_BENFIELD_PRPTY_FEED AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as Calendar_Yr,
+$2 as Calendar_Qtr,
+$3 as Policy_Risk_State,
+$4 as Underwriting_Company,
+$5 as Line_Of_Business,
+$6 as Deductible,
+$7 as Rating_Territory,
+$8 as Policy_Risk_County,
+$9 as TotalTermPremium,
+:p10 as Policy_Limit,
+:p11 as InforcePolicies_Count,
+:p12 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+/* DB_T_SHRD_PROD.STATE, UW Co, LOB, Deductible, Territory, and County */
+
+
+SELECT 
+
+cast(SUBSTR(cast(A.MO_ID as char(6)),1,4) as integer) AS  Calendar_yr,
+
+cast(CASE 
+
+WHEN SUBSTR(cast(A.MO_ID as char(6)),5,2) IN (''01'',''02'',''03'') THEN 1 
+
+WHEN SUBSTR(cast(A.MO_ID as char(6)),5,2) IN (''04'',''05'',''06'') THEN 2 
+
+WHEN SUBSTR(cast(A.MO_ID as char(6)),5,2) IN (''07'',''08'',''09'') THEN 3 
+
+WHEN SUBSTR(cast(A.MO_ID as char(6)),5,2) IN (''10'',''11'',''12'') THEN 4 
+else null 
+
+ END as integer) AS Calendar_Qtr,
+
+  STATE AS PolicyRiskState,
+
+  A.CO_CD AS UnderwritingCompany,
+
+  A.PLCY_TYPE AS LineofBusiness,
+
+  A.PLCY_DEDCTB AS Deducitble,
+
+  A.PRPTY_TERR AS Rating_Territory,
+
+  A.CNTY_CD AS PolicyRiskCounty,
+
+  Sum(A.ANNUAL_PREM) AS TotalTermPremium,
+
+  Sum(A.PLCY_LMT) AS PolicyLimit,
+
+  COUNT(distinct PLCY_NUM) AS InforcePolicies
+
+  from 
+
+  (
+
+
+
+/* Property Query */
+SELECT DISTINCT 
+
+MO_ID,
+
+PLCY_NUM,
+
+PLCY_TYPE,
+
+''INFORCE'' PLCY_STS,
+
+PLCY_INCPTN_DT,
+
+PLCY_EXPRD_DT,
+
+AGNT_CD,
+
+CO_CD,
+
+SL_SRVC_CTR,
+
+PRPTY_TERR,
+
+PLCY_LMT,
+
+BLDG_LMT,
+
+OTHR_STRC_LMT,
+
+LOSS_USE_LMT,
+
+CNTNTS_LMT,
+
+PLCY_DEDCTB,
+
+INSRNC_VAL,
+
+CNSTRCTN_CLAS,
+
+CNTNTS_GRADE,
+
+LOB,
+
+OCCPY_TYPE,
+
+EAQK_ENDRSMT_DEDCTB,
+
+EXWND_ENDRSMT_DESC,
+
+HURCN_ENDRSMT_DEDCTB,
+
+WIND_HAIL_ENDRSMT_DEDCTB,
+
+NBR_OF_STORIES,
+
+FNDTN_TYPE, /*  Put back in this column as part of EIM- 33807 */
+CAST(NULL AS VARCHAR(50)) BCEG_INFO, /*  Put back in this column as part of EIM- 33807 */
+SQ_FOOTAGE,
+
+ROOF_YEAR,
+
+YR_BUILT,
+
+CAST(NULL  AS DECIMAL(18,4)) CMP_DED,
+
+CAST(NULL AS VARCHAR(3)) CMP_COV_IND,
+
+CAST(NULL AS INTEGER) PA_SYM_CD,
+
+CAST(NULL  AS DECIMAL(18,4)) MAXI,
+
+CAST(NULL  AS DECIMAL(18,4)) MEAN,
+
+CAST(NULL  AS DECIMAL(18,4)) MINI,
+
+CAST(NULL AS VARCHAR(50)) UNIT_REF_NBR,
+
+CAST(NULL AS VARCHAR(50)) VEH_MODEL_YR,
+
+CAST(NULL AS VARCHAR(50)) VEH_TYPE_DESC,
+
+CAST(NULL AS VARCHAR(50)) APP_SYM,
+
+ANNUAL_PREM,
+
+CAST(NULL  AS DECIMAL(18,4)) APPEND_PREM,
+
+PRPTY_ADDR_LOC,
+
+ADDR_1,
+
+CITY,
+
+STATE,
+
+CAST(NULL AS VARCHAR(100)) RSK_ST_CD,
+
+CNTY_CD,
+
+ZIPCD,
+
+CAST(IBHS_LEVEL AS VARCHAR(100)) IBHS_LEVEL, 
+
+CAST(''PROPERTY'' AS VARCHAR(25)) LOB_PROPERTY
+
+FROM DB_T_PROD_WRK.AON_BENFIELD_PRPTY_FEED
+
+where MO_ID=:p_MOID 
+
+--:p_prcs_id_fltr
+
+
+
+ 
+
+
+
+UNION ALL
+
+/*  Auto Query */
+SELECT 
+
+MO_ID,
+
+PLCY_NUM,
+
+PLCY_TYPE,
+
+''INFORCE'' PLCY_STS,
+
+NULL PLCY_INCPT_DT,
+
+NULL EXPIRED_DT,
+
+CAST(NULL as VARCHAR(12)) AGENT_NBR,
+
+CO_CD,
+
+CAST(NULL AS VARCHAR(50)) SALE_SERVICE_CENTER,
+
+CAST(NULL AS VARCHAR(100)) PRPTY_TERR,
+
+CAST(0 AS DECIMAL(12,2)) PLCY_LMT,
+
+CAST(NULL  AS DECIMAL(18,4)) BUILDING_LIMIT,
+
+CAST(NULL  AS DECIMAL(18,4)) OTHER_STRUCT_LIMIT,
+
+CAST(NULL  AS DECIMAL(18,4)) LOSS_USE_LIMIT,
+
+CAST(NULL  AS DECIMAL(18,4)) CONTENTS_LIMIT,
+
+CAST(NULL  AS DECIMAL(18,4)) PLCY_DEDCTB,
+
+''100%'' INSRNC_VALUE,
+
+CAST(NULL AS VARCHAR(250)) CNSTRNC_CLASS,
+
+CAST(NULL AS INTEGER) CONTENTS_GRADE,
+
+LOB,
+
+CAST(NULL AS VARCHAR(50)) OCCPNCY_TYPE,
+
+CAST(NULL AS VARCHAR(10)) EQ_ENDOR_DED,
+
+CAST(NULL AS VARCHAR(15))EXWND_ENDRSMT_DESC,
+
+CAST(NULL AS VARCHAR(10)) HURRICANE_ENDOR_DED,
+
+CAST(NULL AS VARCHAR(10)) WIND_HAIL_ENDOR_DED,
+
+CAST(NULL AS VARCHAR(20)) NBR_STORIES,/* EIM-50235 */
+CAST(NULL AS VARCHAR(100)) FOUNDATION_TYPE,  /*  Put back in this column as part of EIM- 33807 */
+CAST(NULL AS VARCHAR(50)) BCEG_INFO, /*  Put back in this column as part of EIM- 33807 */
+CAST(NULL AS DECIMAL(18,4)) SQ_FOOTAGE,
+
+CAST(NULL AS VARCHAR(100)) ROOF_YEAR,
+
+CAST(NULL AS VARCHAR(100)) YR_BUILT,
+
+CMPRN_DEDCTB,
+
+CMPRN_CVGE_IND,
+
+PA_SYM_CD,
+
+MAXM_VAL,
+
+MEAN_VAL,
+
+MIN_VAL,
+
+UNIT_REF_CD,
+
+VEH_MODL_YR,
+
+VEH_TYPE_DESC,
+
+APP_SYM,
+
+ANNUAL_PREM,
+
+APPEND_PREM,
+
+CAST(NULL AS VARCHAR(1000)) PROP_ADDR_LOC,
+
+ADDR_1,
+
+CITY,
+
+STATE,
+
+RSK_ST_CD,
+
+CAST(NULL AS VARCHAR(100)) CNTY_CD,
+
+ZIPCD,
+
+CAST(NULL AS VARCHAR(100)) IBHS_LEVEL,  
+
+CAST(''AUTO'' AS VARCHAR(25)) LOB_AUTO
+
+FROM DB_T_PROD_WRK.AON_BENFIELD_AUTO_FEED ABA
+
+/*LEFT JOIN (
+
+		SELECT 
+
+			PPV.HOST_AGMT_NUM			
+
+			,A_S.AGMT_STS_CD
+
+		FROM (
+
+			
+
+			SELECT A.AGMT_ID
+
+				,A.HOST_AGMT_NUM
+
+				,A.TERM_NUM
+
+				,A.LGCY_PLCY_IND
+
+			FROM  DB_T_PROD_CORE.AGMT A
+--select * from DB_T_PROD_CORE.AGMT limit 100
+			WHERE A.AGMT_TYPE_CD = ''PPV''
+
+			Qualify ROW_NUMBER() OVER (PARTITION BY HOST_AGMT_NUM ORDER BY TERM_NUM DESC,MODL_NUM DESC) = 1
+
+			) PPV
+
+		INNER JOIN (
+
+			SELECT HOST_AGMT_NUM
+
+				,TERM_NUM
+
+				,AGMT_ID
+
+			FROM db_v_sit_base. DB_T_PROD_CORE.AGMT
+
+			WHERE AGMT_TYPE_CD = ''POLTRM''				
+
+			GROUP BY 1,2,3
+
+			) TRM ON PPV.HOST_AGMT_NUM = TRM.HOST_AGMT_NUM
+
+			AND PPV.TERM_NUM = TRM.TERM_NUM
+
+			INNER JOIN  DB_T_PROD_CORE.AGMT_STS A_S ON TRM.AGMT_ID = A_S.AGMT_ID
+
+			AND A_S.AGMT_STS_CD <> ''CNFRMDDT''
+
+			WHERE PPV.LGCY_PLCY_IND=''N'' 
+
+			 QUALIFY ROW_NUMBER() OVER (PARTITION BY PPV.AGMT_ID ORDER BY A_S.AGMT_STS_STRT_DTTM DESC) = 1
+
+		) A ON ABA.PLCY_NUM= A.HOST_AGMT_NUM*/
+
+where MO_ID=:p_MOID 
+
+--:p_prcs_id_fltr
+
+ 
+
+
+
+/*where MO_ID=201909*/ 
+
+/*  */
+AND PRCS_ID=49629
+
+/*and plcy_num=''H1308034''*/
+
+/* and UPPER(TRIM(PLCY_STS))=''INFORCE''  */
+
+
+UNION ALL
+
+/* BOP/Church Query */
+SELECT DISTINCT 
+
+MO_ID,
+
+PLCY_NUM,
+
+PLCY_TYPE,
+
+''INFORCE'' PLCY_STS,
+
+PLCY_INCPTN_DT,
+
+PLCY_EXPRD_DT,
+
+AGNT_CD,
+
+CO_CD,
+
+SL_SRVC_CTR,
+
+PRPTY_TERR,
+
+PLCY_LMT,
+
+BLDG_LMT,
+
+CAST(NULL  AS DECIMAL(18,4)) OTHER_STRUCT_LIMIT,
+
+CAST(NULL  AS DECIMAL(18,4)) LOSS_USE_LIMIT,
+
+CNTNTS_LMT,
+
+PLCY_DEDCTB,
+
+INSRNC_VAL,
+
+CNSTRCTN_CLAS,
+
+CNTNTS_GRADE,
+
+LOB,
+
+OCCPY_TYPE,
+
+CAST(NULL AS VARCHAR(10)) EQ_ENDOR_DED,
+
+EXWND_ENDRSMT_DESC,
+
+CAST(NULL AS VARCHAR(10)) HURRICANE_ENDOR_DED,
+
+WIND_HAIL_ENDRSMT_DEDCTB,
+
+NBR_OF_STORIES,
+
+FNDTN_TYPE,  /*  Put back in  this column as part of EIM- 33807 */
+BCEG_INFO,  /*  Put back in  this column as part of EIM- 33807 */
+SQ_FOOTAGE,
+
+ROOF_YEAR,
+
+YR_BUILT,
+
+CAST(NULL  AS DECIMAL(18,4)) CMP_DED,
+
+CAST(NULL AS VARCHAR(3)) CMP_COV_IND,
+
+CAST(NULL AS INTEGER) PA_SYM_CD,
+
+CAST(NULL  AS DECIMAL(18,4)) MAXI,
+
+CAST(NULL  AS DECIMAL(18,4)) MEAN,
+
+CAST(NULL  AS DECIMAL(18,4)) MINI,
+
+CAST(NULL AS VARCHAR(50)) UNIT_REF_NBR,
+
+CAST(NULL AS VARCHAR(50)) VEH_MODEL_YR,
+
+CAST(NULL AS VARCHAR(50)) VEH_TYPE_DESC,
+
+CAST(NULL AS VARCHAR(50)) APP_SYM,
+
+ANNUAL_PREM,
+
+CAST(NULL  AS DECIMAL(18,4)) APPEND_PREM,
+
+CAST(NULL AS VARCHAR(1000)) PROP_ADDR_LOC,
+
+ADDR_1,
+
+CITY,
+
+STATE,
+
+CAST(NULL AS VARCHAR(100)) RSK_ST_CD,
+
+CNTY_CD,
+
+ZIPCD,
+
+CAST(IBHS_LEVEL AS VARCHAR(100)) IBHS_LEVEL,  
+
+CAST(''BUSINESSOWNERS'' AS VARCHAR(25)) LOB_BOP
+
+FROM DB_T_PROD_WRK.AON_BENFIELD_BOP_CHURCH_FEED
+
+where MO_ID=:p_MOID 
+
+--:p_prcs_id_fltr
+
+
+
+UNION ALL
+
+
+
+/* FARM Query */
+
+
+SELECT DISTINCT 
+
+MO_ID,
+
+PLCY_NUM,
+
+PLCY_TYPE,
+
+''INFORCE'' PLCY_STS,
+
+PLCY_INCPTN_DT,
+
+PLCY_EXPRD_DT,
+
+AGNT_CD,
+
+CO_CD,
+
+SL_SRVC_CTR,
+
+PRPTY_TERR,
+
+PLCY_LMT,
+
+BLDG_LMT,
+
+OTH_STRCTR_LMT as OTHER_STRUCT_LIMIT,
+
+LOSS_LMT as LOSS_USE_LIMIT,
+
+CNTNTS_LMT,
+
+PLCY_DEDCTB,
+
+INSRNC_VAL,
+
+CNSTRCTN_CLAS,
+
+CAST(NULL AS INTEGER) CNTNTS_GRADE,
+
+LOB,
+
+OCCPY_TYPE,
+
+EQ_END as EQ_ENDOR_DED,
+
+CAST(NULL AS VARCHAR(10)) EXWND_ENDRSMT_DESC,
+
+CAST(NULL AS VARCHAR(10)) HURRICANE_ENDOR_DED,
+
+CAST(NULL AS VARCHAR(10)) WIND_HAIL_ENDRSMT_DEDCTB,
+
+NBR_OF_STORIES,
+
+FNDTN_TYPE,  /*  Put back in  this column as part of EIM- 33807 */
+CAST(NULL AS VARCHAR(10)) BCEG_INFO,  /*  Put back in  this column as part of EIM- 33807 */
+SQ_FOOTAGE,
+
+ROOF_YEAR,
+
+YR_BUILT,
+
+CAST(NULL  AS DECIMAL(18,4)) CMP_DED,
+
+CAST(NULL AS VARCHAR(3)) CMP_COV_IND,
+
+CAST(NULL AS INTEGER) PA_SYM_CD,
+
+CAST(NULL  AS DECIMAL(18,4)) MAXI,
+
+CAST(NULL  AS DECIMAL(18,4)) MEAN,
+
+CAST(NULL  AS DECIMAL(18,4)) MINI,
+
+CAST(NULL AS VARCHAR(50)) UNIT_REF_NBR,
+
+CAST(NULL AS VARCHAR(50)) VEH_MODEL_YR,
+
+CAST(NULL AS VARCHAR(50)) VEH_TYPE_DESC,
+
+CAST(NULL AS VARCHAR(50)) APP_SYM,
+
+ANNUAL_PREM,
+
+CAST(NULL  AS DECIMAL(18,4)) APPEND_PREM,
+
+CAST(NULL AS VARCHAR(1000)) PROP_ADDR_LOC,
+
+ADDR_1,
+
+CITY,
+
+STATE,
+
+CAST(NULL AS VARCHAR(100)) RSK_ST_CD,
+
+CNTY_CD,
+
+ZIPCD,
+
+CAST(NULL AS VARCHAR(10)) IBHS_LEVEL,  
+
+CAST(''Farmowners'' AS VARCHAR(25)) LOB_BOP
+
+FROM DB_T_PROD_WRK.AON_BENFIELD_FARM_FEED
+
+where MO_ID=:p_MOID 
+
+--:p_prcs_id_fltr
+
+
+
+/* and UPPER(TRIM(PLCY_STS))=''INFORCE''  */
+) A 
+
+group by 
+
+Calendar_yr,
+
+Calendar_Qtr,
+
+STATE,
+
+  A.CO_CD ,
+
+  A.PLCY_TYPE,
+
+  A.PLCY_DEDCTB,
+
+  A.PRPTY_TERR,
+
+  A.CNTY_CD
+) SRC
+)
+);
+
+
+-- Component EXPTRANS, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE EXPTRANS AS
+(
+SELECT
+SQ_AON_BENFIELD_PRPTY_FEED.Calendar_Yr as Calendar_Yr,
+SQ_AON_BENFIELD_PRPTY_FEED.Calendar_Qtr as Calendar_Qtr,
+SQ_AON_BENFIELD_PRPTY_FEED.Policy_Risk_State as Policy_Risk_State,
+SQ_AON_BENFIELD_PRPTY_FEED.Underwriting_Company as Underwriting_Company,
+SQ_AON_BENFIELD_PRPTY_FEED.Line_Of_Business as Line_Of_Business,
+SQ_AON_BENFIELD_PRPTY_FEED.Deductible as Deductible,
+SQ_AON_BENFIELD_PRPTY_FEED.Rating_Territory as Rating_Territory,
+SQ_AON_BENFIELD_PRPTY_FEED.Policy_Risk_County as Policy_Risk_County,
+SQ_AON_BENFIELD_PRPTY_FEED.TotalTermPremium as TotalTermPremium,
+SQ_AON_BENFIELD_PRPTY_FEED.Policy_Limit as Policy_Limit,
+SQ_AON_BENFIELD_PRPTY_FEED.InforcePolicies_Count as InforcePolicies_Count,
+SQ_AON_BENFIELD_PRPTY_FEED.source_record_id
+FROM
+SQ_AON_BENFIELD_PRPTY_FEED
+);
+
+
+-- Component AON_BENFIELD_FEED_BALANCING_FILE, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE AON_BENFIELD_FEED_BALANCING_FILE AS
+(
+SELECT
+EXPTRANS.Calendar_Yr as Calendar_Year,
+EXPTRANS.Calendar_Qtr as Calendar_Quarter,
+EXPTRANS.Policy_Risk_State as Policy_Risk_State,
+EXPTRANS.Underwriting_Company as UW_Company,
+EXPTRANS.Line_Of_Business as Line_of_Business,
+EXPTRANS.Deductible as Deductible,
+EXPTRANS.Rating_Territory as Rating_Territory,
+EXPTRANS.Policy_Risk_County as Policy_Risk_County,
+EXPTRANS.TotalTermPremium as TotalTermPremium,
+EXPTRANS.Policy_Limit as Policy_Limit,
+EXPTRANS.InforcePolicies_Count as InforcePolicies_count
+FROM
+EXPTRANS
+);
+
+copy into @my_internal_stage/AON_BENFIELD_FEED_BALANCING_FILE from (select * from AON_BENFIELD_FEED_BALANCING_FILE)
+header=true
+overwrite=true;
+
+-- Component AON_BENFIELD_FEED_BALANCING_FILE, Type EXPORT_DATA Exporting data
+-- ;
+
+
+END; ';

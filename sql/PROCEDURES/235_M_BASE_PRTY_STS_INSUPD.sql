@@ -1,0 +1,597 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_BASE_PRTY_STS_INSUPD("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' 
+DECLARE 
+
+start_dttm TIMESTAMP;
+end_dttm TIMESTAMP;
+PRCS_ID INTEGER;
+P_DEFAULT_STR_CD char;
+var_ContactroleTypecode char;
+BEGIN 
+start_dttm := CURRENT_TIMESTAMP();
+end_dttm := CURRENT_TIMESTAMP();
+PRCS_ID := 1;  
+
+-- Component LKP_BUSN, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_BUSN AS
+(
+SELECT BUSN.BUSN_PRTY_ID as BUSN_PRTY_ID, BUSN.SRC_SYS_CD as SRC_SYS_CD, BUSN.TAX_BRAKT_CD as TAX_BRAKT_CD, BUSN.ORG_TYPE_CD as ORG_TYPE_CD, BUSN.GICS_SBIDSTRY_CD as GICS_SBIDSTRY_CD, BUSN.LIFCYCL_CD as LIFCYCL_CD, BUSN.PRTY_TYPE_CD as PRTY_TYPE_CD, BUSN.BUSN_END_DTTM as BUSN_END_DTTM, BUSN.BUSN_STRT_DTTM as BUSN_STRT_DTTM, BUSN.INC_IND as INC_IND, BUSN.EDW_STRT_DTTM as EDW_STRT_DTTM, BUSN.EDW_END_DTTM as EDW_END_DTTM, BUSN.BUSN_CTGY_CD as BUSN_CTGY_CD, BUSN.NK_BUSN_CD as NK_BUSN_CD 
+FROM DB_T_PROD_CORE.BUSN 
+QUALIFY ROW_NUMBER () OVER (PARTITION BY NK_BUSN_CD,BUSN_CTGY_CD ORDER BY EDW_END_DTTM DESC )=1
+);
+
+
+-- Component LKP_INDIV_CLM_CTR, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_INDIV_CLM_CTR AS
+(
+SELECT 
+	INDIV.INDIV_PRTY_ID as INDIV_PRTY_ID, 
+	INDIV.NK_PUBLC_ID as NK_PUBLC_ID 
+FROM 
+	DB_T_PROD_CORE.INDIV
+WHERE
+	INDIV.NK_PUBLC_ID IS NOT NULL
+);
+
+
+-- Component LKP_INDIV_CNT_MGR, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_INDIV_CNT_MGR AS
+(
+SELECT 
+	INDIV.INDIV_PRTY_ID as INDIV_PRTY_ID, 
+	INDIV.NK_LINK_ID as NK_LINK_ID 
+FROM 
+	DB_T_PROD_CORE.INDIV
+WHERE
+	INDIV.NK_PUBLC_ID IS NULL
+);
+
+
+-- Component LKP_INTRNL_ORG, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_INTRNL_ORG AS
+(
+SELECT	INTRNL_ORG.INTRNL_ORG_PRTY_ID as INTRNL_ORG_PRTY_ID, INTRNL_ORG.INTRNL_ORG_TYPE_CD as INTRNL_ORG_TYPE_CD,
+		INTRNL_ORG.INTRNL_ORG_SBTYPE_CD as INTRNL_ORG_SBTYPE_CD, INTRNL_ORG.INTRNL_ORG_NUM as INTRNL_ORG_NUM,
+		INTRNL_ORG.SRC_SYS_CD as SRC_SYS_CD 
+FROM	DB_T_PROD_CORE.INTRNL_ORG 
+ qualify row_number () over (partition by INTRNL_ORG_NUM,INTRNL_ORG_TYPE_CD,INTRNL_ORG_SBTYPE_CD,SRC_SYS_CD order by EDW_END_DTTM desc)=1
+);
+
+
+-- Component LKP_TERADATA_ETL_REF_XLAT_BUSN_CTGY, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TERADATA_ETL_REF_XLAT_BUSN_CTGY AS
+(
+SELECT 
+
+ TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL as TGT_IDNTFTN_VAL
+
+ ,TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_VAL as SRC_IDNTFTN_VAL 
+
+FROM 
+
+ DB_T_PROD_CORE.TERADATA_ETL_REF_XLAT
+
+WHERE 
+
+ TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_NM IN (''BUSN_CTGY'',''ORG_TYPE'',''PRTY_TYPE'')
+
+ AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_NM IN (''derived'', ''cctl_contact.typecode'',''cctl_contact.name'')
+
+ AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_SYS IN (''DS'',''GW'')
+
+ AND TERADATA_ETL_REF_XLAT.EXPN_DT=''9999-12-31''
+);
+
+
+-- Component LKP_TERADATA_ETL_REF_XLAT_INTRNL_ORG_SBTYPE, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TERADATA_ETL_REF_XLAT_INTRNL_ORG_SBTYPE AS
+(
+SELECT 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL as TGT_IDNTFTN_VAL
+
+	,TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_VAL as SRC_IDNTFTN_VAL 
+
+FROM 
+
+	DB_T_PROD_CORE.TERADATA_ETL_REF_XLAT
+
+WHERE 
+
+		TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_NM= ''INTRNL_ORG_SBTYPE''
+);
+
+
+-- Component LKP_TERADATA_ETL_REF_XLAT_PRTY_STS, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TERADATA_ETL_REF_XLAT_PRTY_STS AS
+(
+SELECT 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL as TGT_IDNTFTN_VAL
+
+	,TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_VAL as SRC_IDNTFTN_VAL 
+
+FROM 
+
+	DB_T_PROD_CORE.TERADATA_ETL_REF_XLAT
+
+WHERE 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_NM= ''PRTY_STS_TYPE'' 
+
+             AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_NM IN (''derived'',''cctl_vendoravailtype_alfa.typecode'') 
+
+		AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_SYS IN(''DS'',''GW'') 
+
+		AND TERADATA_ETL_REF_XLAT.EXPN_DT=''9999-12-31''
+);
+
+
+-- Component LKP_TERADATA_ETL_REF_XLAT_PRTY_STS_SBTYPE, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TERADATA_ETL_REF_XLAT_PRTY_STS_SBTYPE AS
+(
+SELECT 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL as TGT_IDNTFTN_VAL
+
+	,TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_VAL as SRC_IDNTFTN_VAL 
+
+FROM 
+
+	DB_T_PROD_CORE.TERADATA_ETL_REF_XLAT
+
+WHERE 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_NM= ''PRTY_STS_SBTYPE'' 
+
+             AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_NM IN (''derived'',''cctl_vendoravailtype_alfa.typecode'') 
+
+		AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_SYS IN(''DS'',''GW'') 
+
+		AND TERADATA_ETL_REF_XLAT.EXPN_DT=''9999-12-31''
+);
+
+
+-- Component LKP_TERADATA_ETL_REF_XLAT_SRC_CD, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TERADATA_ETL_REF_XLAT_SRC_CD AS
+(
+SELECT 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL as TGT_IDNTFTN_VAL
+
+	,TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_VAL as SRC_IDNTFTN_VAL 
+
+FROM 
+
+	DB_T_PROD_CORE.TERADATA_ETL_REF_XLAT
+
+WHERE 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_NM= ''SRC_SYS'' 
+
+             AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_NM= ''derived'' 
+
+		AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_SYS=''DS'' 
+
+		AND TERADATA_ETL_REF_XLAT.EXPN_DT=''9999-12-31''
+);
+
+
+-- Component SQ_cc_contact, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_cc_contact AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as UpdateTime,
+$2 as party_type,
+$3 as AddressBookUID,
+$4 as PRTY_STS_SBTYPE_CD,
+$5 as SRC_SYS_CD,
+$6 as PRTY_STS_CD,
+$7 as UnavailableDate_alfa,
+$8 as VendorUnavMsg_alfa,
+$9 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+select UpdateTime,prty_type,PublicId,PRTY_STS_SBTYPE_CD,SRC_SYS_CD,PRTY_STS_CD,Unalval_dt, Vend_UN_MSG  from(
+
+
+
+SELECT	UPDATETIME,
+
+cctl_contact.NAME_stg as prty_type,
+
+PUBLICID,
+
+PRTY_STS_SBTYPE_CD,
+
+SRC_SYS_CD,
+
+PRTY_STS_CD,
+
+Unalval_dt,
+
+Vend_UN_MSG FROM 
+
+(
+
+	SELECT	   
+
+	cc_contact.UpdateTime_STG as prty_type,
+
+	cc_contact.PublicID_STG AS PublicID,
+
+				case 
+
+when BNoticeFlag_alfa_stg = 1  then ''available''  /* --EIM-31125 */
+				when BNoticeFlag_alfa_stg = 0 then ''unavailable''
+
+	 else  '' '' 
+
+			end as PRTY_STS_SBTYPE_CD,
+
+	''SRC_SYS6'' as SRC_SYS_CD 
+
+	,''PRTY_STS_TYPE1'' as PRTY_STS_CD
+
+	,
+
+			cast (null as timestamp) as Unalval_dt  
+
+	, cast (null as varchar(60)) as Vend_UN_MSG 
+
+	/* colums used for joins*/
+
+	,
+
+			Subtype_stg as Subtype,
+
+			UpdateTime_stg as UpdateTime
+
+	FROM	 DB_T_PROD_STAG.cc_contact
+
+	left join DB_T_PROD_STAG.cctl_vendoravailtype_alfa  
+
+		on cc_contact.VendorAvailability_alfa_stg = cctl_vendoravailtype_alfa.ID_stg
+
+	where	cc_contact.UpdateTime_stg > (:start_dttm) 
+
+		AND cc_contact.UpdateTime_stg <= (:end_dttm)) AS cc_contact
+
+join DB_T_PROD_STAG.cctl_contact 
+
+	on subtype = cctl_contact.id_stg
+
+qualify	row_number ()  over  ( 
+
+partition by   prty_type , PublicId  
+
+order by UpdateTime  desc)=1
+
+
+
+UNION
+
+
+
+SELECT	UpdateTime,
+
+cctl_contact.NAME_Stg as prty_type ,
+
+PUBLICID,
+
+PRTY_STS_SBTYPE_CD,
+
+SRC_SYS_CD,
+
+PRTY_STS_CD,
+
+Unalval_dt,
+
+Vend_UN_MSG from 
+
+(
+
+	SELECT	 
+
+	cc_contact.UpdateTime_STG as UpdateTime,
+
+	cc_contact.PublicID_STG AS PUBLICID,
+
+	
+
+			case 
+
+				when cctl_vendoravailtype_alfa.TYPECODE_stg is not null
+
+	     then cctl_vendoravailtype_alfa.TYPECODE_stg
+
+	     else '' '' 
+
+			end as PRTY_STS_SBTYPE_CD 
+
+	, ''SRC_SYS6'' as SRC_SYS_CD 
+
+	,''PRTY_STS_TYPE2'' as PRTY_STS_CD 
+
+	,
+
+			cc_contact.UnavailableDate_alfa_stg as Unalval_dt
+
+	, cc_contact.VendorUnavMsg_alfa_stg as Vend_UN_MSG
+
+	/* colums used for joins*/
+
+	,
+
+			Subtype_stg as Subtype
+
+	 FROM
+
+	 DB_T_PROD_STAG.cc_contact
+
+	left join DB_T_PROD_STAG.cctl_vendoravailtype_alfa  
+
+		on cc_contact.VendorAvailability_alfa_stg = cctl_vendoravailtype_alfa.ID_stg
+
+	where	cc_contact.UpdateTime_stg > (:start_dttm) 
+
+		AND cc_contact.UpdateTime_Stg <= (:end_dttm)) AS cc_contact
+
+join DB_T_PROD_STAG.cctl_contact 
+
+	on subtype = cctl_contact.id_stg
+
+qualify	row_number ()  over  ( 
+
+partition by   prty_type, PublicId 
+
+order by UpdateTime desc)=1
+
+
+
+) zz
+
+
+
+where	PRTY_STS_SBTYPE_CD <> '' ''
+) SRC
+)
+);
+
+
+-- Component EXPTRANS, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE EXPTRANS AS
+(
+SELECT
+SQ_cc_contact.UpdateTime as UpdateTime,
+SQ_cc_contact.party_type as Party_Type,
+LKP_1.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT_INTRNL_ORG_SBTYPE */ as v_Party_type,
+LKP_2.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT_BUSN_CTGY */ as var_BUSN_CTGY,
+CASE WHEN LKP_3.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT_PRTY_STS */ IS NULL THEN ''UNK'' ELSE ( LKP_4.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT_PRTY_STS */ ) END as out_Party_sts,
+LKP_5.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT_SRC_CD */ as v_SRC_SYS_CD,
+v_SRC_SYS_CD as out_SRC_SYS_CD,
+CASE
+  WHEN SQ_cc_contact.party_type IN (
+    ''Person'',
+    ''Adjudicator'',
+    ''Vendor (Person)'',
+    ''Attorney'',
+    ''Doctor'',
+    ''Policy Person'',
+    ''Contact''
+  ) THEN LKP_6.INDIV_PRTY_ID
+  WHEN SQ_cc_contact.party_type IN (
+    ''Company'',
+    ''Vendor (Company)'',
+    ''Auto Repair Shop'',
+    ''Auto Towing Agcy'',
+    ''Law Firm'',
+    ''Medical Care Organization''
+  ) THEN LKP_7.BUSN_PRTY_ID
+  WHEN var_BUSN_CTGY = ''INSCAR'' THEN LKP_8.BUSN_PRTY_ID
+  WHEN SQ_cc_contact.party_type IN (''UserContact'') THEN LKP_9.INDIV_PRTY_ID
+  WHEN v_Party_type IN (''CO'', ''PRDA'', ''SRVCCTR'') THEN LKP_10.INTRNL_ORG_PRTY_ID
+  ELSE NULL
+END AS out_prty_id,
+:PRCS_ID as PRCS_ID,
+CURRENT_TIMESTAMP as EDW_STRT_DTTM,
+TO_TIMESTAMP ( ''12/31/9999 23:59:59.999999'' , ''MM/DD/YYYY HH24:MI:SS.FF6'' ) as EDW_END_DTTM,
+CASE WHEN LKP_11.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT_PRTY_STS_SBTYPE */ IS NULL THEN ''UNK'' ELSE ( LKP_12.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT_PRTY_STS_SBTYPE */ ) END as out_PRTY_STS_SUBTYPE_CD,
+SQ_cc_contact.UnavailableDate_alfa as UnavailableDate_alfa,
+SQ_cc_contact.VendorUnavMsg_alfa as VendorUnavMsg_alfa,
+SQ_cc_contact.source_record_id,
+row_number() over (partition by SQ_cc_contact.source_record_id order by SQ_cc_contact.source_record_id) as RNK
+FROM
+SQ_cc_contact
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT_INTRNL_ORG_SBTYPE LKP_1 ON LKP_1.SRC_IDNTFTN_VAL = SQ_cc_contact.party_type
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT_BUSN_CTGY LKP_2 ON LKP_2.SRC_IDNTFTN_VAL = SQ_cc_contact.party_type
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT_PRTY_STS LKP_3 ON LKP_3.SRC_IDNTFTN_VAL = SQ_cc_contact.PRTY_STS_CD
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT_PRTY_STS LKP_4 ON LKP_4.SRC_IDNTFTN_VAL = SQ_cc_contact.PRTY_STS_CD
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT_SRC_CD LKP_5 ON LKP_5.SRC_IDNTFTN_VAL = ltrim ( rtrim ( SQ_cc_contact.SRC_SYS_CD ) )
+LEFT JOIN LKP_INDIV_CNT_MGR LKP_6 ON LKP_6.NK_LINK_ID = SQ_cc_contact.AddressBookUID
+LEFT JOIN LKP_BUSN LKP_7 ON LKP_7.BUSN_CTGY_CD = var_BUSN_CTGY AND LKP_7.NK_BUSN_CD = SQ_cc_contact.AddressBookUID
+LEFT JOIN LKP_BUSN LKP_8 ON LKP_8.BUSN_CTGY_CD = var_BUSN_CTGY AND LKP_8.NK_BUSN_CD = SQ_cc_contact.AddressBookUID
+LEFT JOIN LKP_INDIV_CLM_CTR LKP_9 ON LKP_9.NK_PUBLC_ID = SQ_cc_contact.AddressBookUID
+LEFT JOIN LKP_INTRNL_ORG LKP_10 ON LKP_10.INTRNL_ORG_TYPE_CD = ''INT'' AND LKP_10.INTRNL_ORG_SBTYPE_CD = v_Party_type AND LKP_10.INTRNL_ORG_NUM = SQ_cc_contact.AddressBookUID
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT_PRTY_STS_SBTYPE LKP_11 ON LKP_11.SRC_IDNTFTN_VAL = ltrim ( rtrim ( SQ_cc_contact.PRTY_STS_SBTYPE_CD ) )
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT_PRTY_STS_SBTYPE LKP_12 ON LKP_12.SRC_IDNTFTN_VAL = ltrim ( rtrim ( SQ_cc_contact.PRTY_STS_SBTYPE_CD ) )
+QUALIFY RNK = 1
+);
+
+
+-- Component LKPTRANS1, Type LOOKUP 
+CREATE OR REPLACE TEMPORARY TABLE LKPTRANS1 AS
+(
+SELECT
+LKP.PRTY_STS_CD,
+LKP.PRTY_STS_STRT_DTTM,
+LKP.PRTY_ID,
+LKP.PRTY_STS_END_DTTM,
+LKP.PRTY_STS_RSN_CD,
+LKP.PRTY_STS_SBTYPE_CD,
+LKP.PRTY_STS_RSN_FREFM_TXT,
+LKP.EDW_END_DTTM,
+EXPTRANS.UpdateTime as UpdateTime,
+EXPTRANS.Party_Type as Party_Type,
+EXPTRANS.out_Party_sts as PRTY_STS_CD1,
+EXPTRANS.out_SRC_SYS_CD as SRC_SYS_CD,
+EXPTRANS.out_prty_id as out_prty_id,
+EXPTRANS.out_PRTY_STS_SUBTYPE_CD as in_PRTY_STS_SBTYPE_CD,
+EXPTRANS.PRCS_ID as PRCS_ID1,
+EXPTRANS.EDW_STRT_DTTM as EDW_STRT_DTTM1,
+EXPTRANS.EDW_END_DTTM as EDW_END_DTTM1,
+EXPTRANS.UnavailableDate_alfa as UnavailableDate_alfa,
+EXPTRANS.VendorUnavMsg_alfa as VendorUnavMsg_alfa,
+EXPTRANS.source_record_id,
+ROW_NUMBER() OVER(PARTITION BY EXPTRANS.source_record_id ORDER BY LKP.PRTY_STS_CD asc,LKP.PRTY_STS_STRT_DTTM asc,LKP.PRTY_ID asc,LKP.PRTY_STS_END_DTTM asc,LKP.PRTY_STS_RSN_CD asc,LKP.PRTY_STS_SBTYPE_CD asc,LKP.PRTY_STS_RSN_FREFM_TXT asc,LKP.EDW_END_DTTM asc) RNK
+FROM
+EXPTRANS
+LEFT JOIN (
+SELECT PRTY_STS.PRTY_STS_CD as PRTY_STS_CD, PRTY_STS.PRTY_STS_STRT_DTTM as PRTY_STS_STRT_DTTM, PRTY_STS.PRTY_STS_END_DTTM as PRTY_STS_END_DTTM, 
+PRTY_STS.PRTY_STS_RSN_CD as PRTY_STS_RSN_CD, PRTY_STS.PRTY_STS_SBTYPE_CD as PRTY_STS_SBTYPE_CD, 
+PRTY_STS.EDW_END_DTTM as EDW_END_DTTM,
+PRTY_STS.PRTY_ID as PRTY_ID, PRTY_STS.PRTY_STS_RSN_FREFM_TXT as PRTY_STS_RSN_FREFM_TXT FROM DB_T_PROD_CORE.PRTY_STS
+QUALIFY ROW_NUMBER() OVER(PARTITION BY PRTY_ID,PRTY_STS_CD ORDER BY EDW_END_DTTM desc) = 1
+) LKP ON LKP.PRTY_ID = EXPTRANS.out_prty_id AND LKP.PRTY_STS_CD = EXPTRANS.out_Party_sts
+QUALIFY RNK = 1
+);
+
+
+-- Component EXPTRANS1, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE EXPTRANS1 AS
+(
+SELECT
+LKPTRANS1.EDW_END_DTTM as lkp_EDW_END_DTTM,
+LKPTRANS1.UpdateTime as in_UpdateTime,
+LKPTRANS1.PRTY_STS_CD1 as in_PRTY_STS_CD,
+LKPTRANS1.out_prty_id as in_out_prty_id,
+LKPTRANS1.in_PRTY_STS_SBTYPE_CD as in_PRTY_STS_SBTYPE_CD,
+LKPTRANS1.PRCS_ID1 as in_PRCS_ID1,
+LKPTRANS1.EDW_STRT_DTTM1 as in_EDW_STRT_DTTM1,
+LKPTRANS1.EDW_END_DTTM1 as in_EDW_END_DTTM1,
+MD5 ( ltrim ( rtrim ( to_char ( LKPTRANS1.PRTY_STS_SBTYPE_CD ) ) ) || ltrim ( rtrim ( to_char ( LKPTRANS1.PRTY_STS_CD ) ) ) || ltrim ( rtrim ( to_char ( LKPTRANS1.PRTY_STS_RSN_FREFM_TXT ) ) ) ) as chksum_lkp,
+MD5 ( ltrim ( rtrim ( to_char ( LKPTRANS1.in_PRTY_STS_SBTYPE_CD ) ) ) || ltrim ( rtrim ( to_char ( LKPTRANS1.PRTY_STS_CD1 ) ) ) || ltrim ( rtrim ( to_char ( LKPTRANS1.VendorUnavMsg_alfa ) ) ) ) as chksum_in,
+CASE WHEN chksum_lkp IS NULL THEN 1 ELSE CASE WHEN chksum_lkp != chksum_in THEN 2 ELSE 0 END END as flag,
+LKPTRANS1.UnavailableDate_alfa as UnavailableDate_alfa,
+LKPTRANS1.VendorUnavMsg_alfa as VendorUnavMsg_alfa,
+LKPTRANS1.source_record_id
+FROM
+LKPTRANS1
+);
+
+
+-- Component RTRTRANS_INSERT, Type ROUTER Output Group INSERT
+CREATE OR REPLACE TEMPORARY TABLE RTRTRANS_INSERT AS
+(SELECT
+EXPTRANS1.in_UpdateTime as in_UpdateTime,
+EXPTRANS1.in_PRTY_STS_CD as in_PRY_STS_CD,
+EXPTRANS1.in_out_prty_id as in_out_prty_id,
+EXPTRANS1.in_PRTY_STS_SBTYPE_CD as in_PRTY_STS_SBTYPE_CD,
+EXPTRANS1.in_PRCS_ID1 as in_PRCS_ID1,
+EXPTRANS1.in_EDW_STRT_DTTM1 as in_EDW_STRT_DTTM1,
+EXPTRANS1.in_EDW_END_DTTM1 as in_EDW_END_DTTM1,
+EXPTRANS1.flag as flag,
+EXPTRANS1.lkp_EDW_END_DTTM as lkp_EDW_END_DTTM,
+EXPTRANS1.UnavailableDate_alfa as UnavailableDate_alfa,
+EXPTRANS1.VendorUnavMsg_alfa as VendorUnavMsg_alfa,
+EXPTRANS1.source_record_id
+FROM
+EXPTRANS1
+WHERE ( EXPTRANS1.flag = 1 or ( EXPTRANS1.flag = 2 and EXPTRANS1.lkp_EDW_END_DTTM = TO_TIMESTAMP ( ''12/31/9999 23:59:59.999999'' , ''MM/DD/YYYY HH24:MI:SS.FF6'' ) ) ) and EXPTRANS1.in_out_prty_id IS NOT NULL);
+
+
+-- Component EXPTRANS3, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE EXPTRANS3 AS
+(
+SELECT
+RTRTRANS_INSERT.in_UpdateTime as in_UpdateTime1,
+RTRTRANS_INSERT.in_PRY_STS_CD as in_PRY_STS_CD1,
+RTRTRANS_INSERT.in_out_prty_id as in_out_prty_id1,
+RTRTRANS_INSERT.in_PRTY_STS_SBTYPE_CD as in_PRTY_STS_SBTYPE_CD,
+RTRTRANS_INSERT.in_PRCS_ID1 as in_PRCS_ID11,
+RTRTRANS_INSERT.in_EDW_STRT_DTTM1 as in_EDW_STRT_DTTM11,
+RTRTRANS_INSERT.in_EDW_END_DTTM1 as in_EDW_END_DTTM11,
+RTRTRANS_INSERT.VendorUnavMsg_alfa as VendorUnavMsg_alfa1,
+CASE WHEN RTRTRANS_INSERT.in_PRY_STS_CD = ''VNDRAVLFLG'' THEN CASE WHEN RTRTRANS_INSERT.in_PRTY_STS_SBTYPE_CD = ''UNAVAIL'' THEN RTRTRANS_INSERT.UnavailableDate_alfa ELSE RTRTRANS_INSERT.in_UpdateTime END ELSE RTRTRANS_INSERT.in_UpdateTime END as v_UnavailableDate_alfa1,
+CASE WHEN v_UnavailableDate_alfa1 IS NULL THEN RTRTRANS_INSERT.in_UpdateTime ELSE v_UnavailableDate_alfa1 END as v_UnavailableDate_alfa2,
+v_UnavailableDate_alfa2 as o_UnavailableDate_alfa1,
+RTRTRANS_INSERT.source_record_id
+FROM
+RTRTRANS_INSERT
+);
+
+
+-- Component PRTY_STS, Type TARGET 
+INSERT INTO DB_T_PROD_CORE.PRTY_STS
+(
+PRTY_STS_CD,
+PRTY_STS_STRT_DTTM,
+PRTY_ID,
+PRTY_STS_END_DTTM,
+PRTY_STS_SBTYPE_CD,
+PRTY_STS_RSN_FREFM_TXT,
+PRCS_ID,
+EDW_STRT_DTTM,
+EDW_END_DTTM,
+TRANS_STRT_DTTM,
+TRANS_END_DTTM
+)
+SELECT
+EXPTRANS3.in_PRY_STS_CD1 as PRTY_STS_CD,
+EXPTRANS3.o_UnavailableDate_alfa1 as PRTY_STS_STRT_DTTM,
+EXPTRANS3.in_out_prty_id1 as PRTY_ID,
+EXPTRANS3.in_EDW_END_DTTM11 as PRTY_STS_END_DTTM,
+EXPTRANS3.in_PRTY_STS_SBTYPE_CD as PRTY_STS_SBTYPE_CD,
+EXPTRANS3.VendorUnavMsg_alfa1 as PRTY_STS_RSN_FREFM_TXT,
+EXPTRANS3.in_PRCS_ID11 as PRCS_ID,
+EXPTRANS3.in_EDW_STRT_DTTM11 as EDW_STRT_DTTM,
+EXPTRANS3.in_EDW_END_DTTM11 as EDW_END_DTTM,
+EXPTRANS3.in_UpdateTime1 as TRANS_STRT_DTTM,
+EXPTRANS3.in_EDW_END_DTTM11 as TRANS_END_DTTM
+FROM
+EXPTRANS3;
+
+
+-- Component PRTY_STS, Type Post SQL 
+UPDATE DB_T_PROD_CORE.PRTY_STS FROM
+
+(SELECT	distinct PRTY_ID,PRTY_STS_CD,EDW_STRT_DTTM,TRANS_STRT_DTTM
+
+,max(EDW_STRT_DTTM) over (partition by  PRTY_ID,PRTY_STS_CD ORDER BY EDW_STRT_DTTM ASC rows between 1 following and 1 following) - INTERVAL ''1 SECOND'' 
+
+ as lead1
+
+ ,max(TRANS_STRT_DTTM) over (partition by  PRTY_ID,PRTY_STS_CD ORDER BY TRANS_STRT_DTTM ASC rows between 1 following and 1 following)  - INTERVAL ''1 SECOND''  as lead2
+
+FROM DB_T_PROD_CORE.PRTY_STS
+
+ ) a
+
+set EDW_END_DTTM=A.lead1
+
+, TRANS_END_DTTM=a.lead2
+
+where PRTY_STS.EDW_STRT_DTTM = A.EDW_STRT_DTTM
+
+--and PRTY_STS.TRANS_STRT_DTTM = A.TRANS_STRT_DTTM
+
+and PRTY_STS.PRTY_ID=A.PRTY_ID
+
+and PRTY_STS.PRTY_STS_CD = A.PRTY_STS_CD
+
+--and PRTY_STS.PRTY_STS_SBTYPE_CD = A.PRTY_STS_SBTYPE_CD
+
+and CAST(PRTY_STS.EDW_END_DTTM AS DATE)=''9999-12-31''
+
+and CAST(PRTY_STS.TRANS_END_DTTM AS DATE)=''9999-12-31'' 
+
+and lead1 is not null 
+
+and lead2 is not null;
+
+
+END; ';

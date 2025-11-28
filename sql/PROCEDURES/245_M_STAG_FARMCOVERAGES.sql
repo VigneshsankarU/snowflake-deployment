@@ -1,0 +1,153 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_STAG_FARMCOVERAGES("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' DECLARE FEED_IND varchar;
+ FEED_DT date;
+BEGIN 
+
+FEED_IND:=(select DAILY_FEED_IND from DB_T_CTRL_PROD.ECTL_JOB_LOAD_STATUS_LOG where ECTL_BATCH_ID= :run_id);  
+FEED_DT:=(select current_date);  
+
+-- Component FARMCOVERAGES1, Type TRUNCATE_TABLE 
+TRUNCATE TABLE DB_T_STAG_MEMBXREF_PROD.FARMCOVERAGES;
+
+
+-- PIPELINE START FOR 1
+
+-- Component SQ_FARMCOVERAGES2, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_FARMCOVERAGES2 AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as record_count,
+$2 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT count(*) as record_count
+FROM
+DB_T_STAG_MEMBXREF_PROD.FARMCOVERAGES
+) SRC
+)
+);
+
+
+-- Component exp_rec_cnt, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_rec_cnt AS
+(
+SELECT
+SQ_FARMCOVERAGES2.record_count as record_count,
+:feed_ind as feed_ind,
+:feed_dt as feed_dt,
+SQ_FARMCOVERAGES2.source_record_id
+FROM
+SQ_FARMCOVERAGES2
+);
+
+
+-- Component TRG_MEMBXREF, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE TRG_MEMBXREF AS
+(
+SELECT
+exp_rec_cnt.feed_ind as feed_ind,
+exp_rec_cnt.feed_dt as feed_dt,
+exp_rec_cnt.record_count as record_cnt
+FROM
+exp_rec_cnt
+);
+
+
+-- Component TRG_MEMBXREF, Type EXPORT_DATA Exporting data
+;
+
+
+-- PIPELINE END FOR 1
+
+-- PIPELINE START FOR 2
+
+-- Component SQ_FARMCOVERAGES3, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_FARMCOVERAGES3 AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as SC_POLICY_NUM,
+$2 as RFD_COV_NDX,
+$3 as RFD_TYPE_IND,
+$4 as RFD_COV,
+$5 as RFD_PRM,
+$6 as RFD_DED,
+$7 as RFD_PCOV,
+$8 as RFD_PDED,
+$9 as RFD_DT,
+$10 as RFD_DED_DT,
+$11 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT
+FARMCOVERAGES.SC_POLICY_NUM,
+FARMCOVERAGES.RFD_COV_NDX,
+FARMCOVERAGES.RFD_TYPE_IND,
+FARMCOVERAGES.RFD_COV,
+FARMCOVERAGES.RFD_PRM,
+FARMCOVERAGES.RFD_DED,
+FARMCOVERAGES.RFD_PCOV,
+FARMCOVERAGES.RFD_PDED,
+FARMCOVERAGES.RFD_DT,
+FARMCOVERAGES.RFD_DED_DT
+FROM DB_T_STAG_MEMBXREF_PROD.FARMCOVERAGES
+) SRC
+)
+);
+
+
+-- Component exp_pass_through, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_through AS
+(
+SELECT
+SQ_FARMCOVERAGES3.SC_POLICY_NUM as SC_POLICY_NUM,
+SQ_FARMCOVERAGES3.RFD_COV_NDX as RFD_COV_NDX,
+SQ_FARMCOVERAGES3.RFD_TYPE_IND as RFD_TYPE_IND,
+SQ_FARMCOVERAGES3.RFD_COV as RFD_COV,
+SQ_FARMCOVERAGES3.RFD_PRM as RFD_PRM,
+SQ_FARMCOVERAGES3.RFD_DED as RFD_DED,
+SQ_FARMCOVERAGES3.RFD_PCOV as RFD_PCOV,
+SQ_FARMCOVERAGES3.RFD_PDED as RFD_PDED,
+SQ_FARMCOVERAGES3.RFD_DT as RFD_DT,
+SQ_FARMCOVERAGES3.RFD_DED_DT as RFD_DED_DT,
+SQ_FARMCOVERAGES3.source_record_id
+FROM
+SQ_FARMCOVERAGES3
+);
+
+
+-- Component FARMCOVERAGES1, Type TARGET 
+INSERT INTO DB_T_STAG_MEMBXREF_PROD.FARMCOVERAGES
+(
+SC_POLICY_NUM,
+RFD_COV_NDX,
+RFD_TYPE_IND,
+RFD_COV,
+RFD_PRM,
+RFD_DED,
+RFD_PCOV,
+RFD_PDED,
+RFD_DT,
+RFD_DED_DT
+)
+SELECT
+exp_pass_through.SC_POLICY_NUM as SC_POLICY_NUM,
+exp_pass_through.RFD_COV_NDX as RFD_COV_NDX,
+exp_pass_through.RFD_TYPE_IND as RFD_TYPE_IND,
+exp_pass_through.RFD_COV as RFD_COV,
+exp_pass_through.RFD_PRM as RFD_PRM,
+exp_pass_through.RFD_DED as RFD_DED,
+exp_pass_through.RFD_PCOV as RFD_PCOV,
+exp_pass_through.RFD_PDED as RFD_PDED,
+exp_pass_through.RFD_DT as RFD_DT,
+exp_pass_through.RFD_DED_DT as RFD_DED_DT
+FROM
+exp_pass_through;
+
+
+-- PIPELINE END FOR 2
+
+END; ';

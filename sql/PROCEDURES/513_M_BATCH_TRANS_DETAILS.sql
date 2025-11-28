@@ -1,0 +1,255 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_BATCH_TRANS_DETAILS("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS '
+
+declare 
+PROJ_ID int;
+BATCH_IND varchar;
+PMMappingName varchar;
+TABLE_NM varchar;
+
+BEGIN 
+PROJ_ID :=4;
+BATCH_IND := ''Y'';
+PMMappingName:= ''M_BATCH_TRANS_DETAILS'';
+TABLE_NM :=''BATCH_TRANS_DETAILS'';
+
+
+-- Component STG_FED_MSTR_DELTA, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE STG_FED_MSTR_DELTA AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as MEMBER_NBR,
+$2 as BATCH_NBR_1,
+$3 as BATCH_TYPE_1,
+$4 as BATCH_DATE_1,
+$5 as BATCH_NBR_2,
+$6 as BATCH_TYPE_2,
+$7 as BATCH_DATE_2,
+$8 as BATCH_NBR_3,
+$9 as BATCH_TYPE_3,
+$10 as BATCH_DATE_3,
+$11 as TX_CD,
+$12 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT STG_FED_MSTR_DELTA.MEMBER_NBR, 
+STG_FED_MSTR_DELTA.BATCH_NBR_1, 
+STG_FED_MSTR_DELTA.BATCH_TYPE_1, 
+STG_FED_MSTR_DELTA.BATCH_DATE_1, 
+STG_FED_MSTR_DELTA.BATCH_NBR_2, 
+STG_FED_MSTR_DELTA.BATCH_TYPE_2, 
+STG_FED_MSTR_DELTA.BATCH_DATE_2, 
+STG_FED_MSTR_DELTA.BATCH_NBR_3, 
+STG_FED_MSTR_DELTA.BATCH_TYPE_3, 
+STG_FED_MSTR_DELTA.BATCH_DATE_3, 
+STG_FED_MSTR_DELTA.TX_CD 
+FROM
+DB_T_STAG_PROD.STG_FED_MSTR_DELTA
+WHERE TX_CD <> ''DEL''
+) SRC
+)
+);
+
+
+-- Component LKP_MEMBER_MSTR, Type LOOKUP 
+CREATE OR REPLACE TEMPORARY TABLE LKP_MEMBER_MSTR AS
+(
+SELECT
+LKP.MEMB_SKEY,
+STG_FED_MSTR_DELTA.source_record_id,
+ROW_NUMBER() OVER(PARTITION BY STG_FED_MSTR_DELTA.source_record_id ORDER BY LKP.MEMB_SKEY asc,LKP.MEMB_NUM asc,LKP.MEMB_EFF_DT asc,LKP.MEMB_EXP_DT asc,LKP.MEMB_EMAIL asc,LKP.MEMB_PHONE asc,LKP.ECTL_INS_BATCH_ID asc,LKP.ECTL_UPD_BATCH_ID asc,LKP.ECTL_INS_PRGM_ID asc,LKP.ECTL_UPD_PRGM_ID asc) RNK
+FROM
+STG_FED_MSTR_DELTA
+LEFT JOIN (
+SELECT MEMBER_MSTR.MEMB_SKEY as MEMB_SKEY, 
+MEMBER_MSTR.MEMB_NUM as MEMB_NUM, 
+MEMBER_MSTR.MEMB_EFF_DT as MEMB_EFF_DT, 
+MEMBER_MSTR.MEMB_EXP_DT as MEMB_EXP_DT, 
+MEMBER_MSTR.MEMB_EMAIL as MEMB_EMAIL, 
+MEMBER_MSTR.MEMB_PHONE as MEMB_PHONE, 
+MEMBER_MSTR.ECTL_INS_BATCH_ID as ECTL_INS_BATCH_ID, MEMBER_MSTR.ECTL_UPD_BATCH_ID as ECTL_UPD_BATCH_ID, MEMBER_MSTR.ECTL_INS_PRGM_ID as ECTL_INS_PRGM_ID,
+MEMBER_MSTR.ECTL_UPD_PRGM_ID as ECTL_UPD_PRGM_ID
+FROM db_t_core_prod.MEMBER_MSTR
+WHERE MEMB_EXP_DT = ''9999-12-31''
+) LKP ON LKP.MEMB_NUM = STG_FED_MSTR_DELTA.MEMBER_NBR
+QUALIFY RNK = 1
+);
+
+
+-- Component nrm_BATCH_TRANS_DETAILS, Type NORMALIZER 
+CREATE OR REPLACE TEMPORARY TABLE nrm_BATCH_TRANS_DETAILS AS
+WITH inner_sql AS (
+    SELECT
+        LKP_MEMBER_MSTR.MEMB_SKEY AS MEMBER_SKEY_in,
+        STG_FED_MSTR_DELTA.BATCH_NBR_1 AS BATCH_NBR_in1,
+        STG_FED_MSTR_DELTA.BATCH_NBR_2 AS BATCH_NBR_in2,
+        STG_FED_MSTR_DELTA.BATCH_NBR_3 AS BATCH_NBR_in3,
+        STG_FED_MSTR_DELTA.BATCH_TYPE_1 AS BATCH_TYPE_in1,
+        STG_FED_MSTR_DELTA.BATCH_TYPE_2 AS BATCH_TYPE_in2,
+        STG_FED_MSTR_DELTA.BATCH_TYPE_3 AS BATCH_TYPE_in3,
+        STG_FED_MSTR_DELTA.BATCH_DATE_1 AS BATCH_DATE_in1,
+        STG_FED_MSTR_DELTA.BATCH_DATE_2 AS BATCH_DATE_in2,
+        STG_FED_MSTR_DELTA.BATCH_DATE_3 AS BATCH_DATE_in3,
+        STG_FED_MSTR_DELTA.TX_CD AS TX_CD_in,
+        STG_FED_MSTR_DELTA.source_record_id
+    FROM STG_FED_MSTR_DELTA
+    LEFT JOIN LKP_MEMBER_MSTR 
+        ON STG_FED_MSTR_DELTA.source_record_id = LKP_MEMBER_MSTR.source_record_id
+)
+SELECT 
+    MEMBER_SKEY_in AS MEMBER_SKEY,
+    TX_CD_in AS TX_CD,
+    BATCH_DATE,
+    BATCH_NBR,
+    BATCH_TYPE,
+    REC_NO,
+    source_record_id
+FROM (
+    SELECT MEMBER_SKEY_in, TX_CD_in, source_record_id,
+           BATCH_DATE_in1 AS BATCH_DATE, 
+           BATCH_NBR_in1  AS BATCH_NBR, 
+           BATCH_TYPE_in1 AS BATCH_TYPE,
+           ''REC1'' AS REC_NO
+    FROM inner_sql
+
+    UNION ALL
+
+    SELECT MEMBER_SKEY_in, TX_CD_in, source_record_id,
+           BATCH_DATE_in2 AS BATCH_DATE, 
+           BATCH_NBR_in2  AS BATCH_NBR, 
+           BATCH_TYPE_in2 AS BATCH_TYPE,
+           ''REC2'' AS REC_NO
+    FROM inner_sql
+
+    UNION ALL
+
+    SELECT MEMBER_SKEY_in, TX_CD_in, source_record_id,
+           BATCH_DATE_in3 AS BATCH_DATE, 
+           BATCH_NBR_in3  AS BATCH_NBR, 
+           BATCH_TYPE_in3 AS BATCH_TYPE,
+           ''REC3'' AS REC_NO
+    FROM inner_sql
+) t;
+
+
+-- Component srt_Remove_Duplicate, Type SORTER 
+CREATE OR REPLACE TEMPORARY TABLE srt_Remove_Duplicate AS
+(
+SELECT
+NULL as BATCH_DATE_2,
+NULL as BATCH_TYPE_3,
+NULL as BATCH_NBR_2,
+NULL as BATCH_DATE_1,
+NULL as BATCH_TYPE_1,
+NULL as BATCH_NBR_3,
+NULL as BATCH_TYPE_2,
+NULL as TX_CD,
+NULL as BATCH_DATE_3,
+NULL as BATCH_NBR_1,
+nrm_BATCH_TRANS_DETAILS.MEMBER_SKEY as MEMBER_SKEY,
+nrm_BATCH_TRANS_DETAILS.BATCH_NBR as BATCH_NBR,
+nrm_BATCH_TRANS_DETAILS.BATCH_TYPE as BATCH_TYPE,
+nrm_BATCH_TRANS_DETAILS.BATCH_DATE as BATCH_DATE,
+nrm_BATCH_TRANS_DETAILS.source_record_id
+FROM
+nrm_BATCH_TRANS_DETAILS
+ORDER BY MEMBER_SKEY , BATCH_NBR , BATCH_TYPE , BATCH_DATE 
+);
+
+
+-- Component exp_Normalized_Trans, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_Normalized_Trans AS
+(
+SELECT
+srt_Remove_Duplicate.MEMBER_SKEY as MEMBER_SKEY,
+srt_Remove_Duplicate.BATCH_NBR as BATCH_NBR,
+srt_Remove_Duplicate.BATCH_TYPE as BATCH_TYPE,
+substr ( srt_Remove_Duplicate.BATCH_DATE , 1 , 4 ) as YYYY,
+substr ( srt_Remove_Duplicate.BATCH_DATE , 5 , 2 ) as MM,
+substr ( srt_Remove_Duplicate.BATCH_DATE , 7 , 2 ) as DD,
+:PROJ_ID as PROJECT_ID,
+:BATCH_IND as BATCH_ACTIVE_IND,
+:PMMappingName as PROGRAM_NM,
+:TABLE_NM as TABLE_NAME,
+srt_Remove_Duplicate.source_record_id
+FROM
+srt_Remove_Duplicate
+);
+
+
+-- Component m_validate_date, Type MAPPLET 
+--MAPPLET NOT REGISTERED: m_validate_date, mapplet instance m_validate_date;
+call m_validate_date(''exp_Normalized_Trans'');
+
+-- Component m_lkp_Control_Tables, Type MAPPLET 
+--MAPPLET NOT REGISTERED: m_lkp_Control_Tables, mapplet instance m_lkp_Control_Tables;
+call m_lkp_Control_Tables(''exp_Normalized_Trans'');
+
+-- Component LKP_FED_BATCH_TRANS_DETAILS, Type LOOKUP 
+CREATE OR REPLACE TEMPORARY TABLE LKP_FED_BATCH_TRANS_DETAILS AS
+(
+SELECT
+LKP.MEMB_SKEY,
+exp_Normalized_Trans.source_record_id,
+ROW_NUMBER() OVER(PARTITION BY exp_Normalized_Trans.source_record_id ORDER BY LKP.MEMB_SKEY asc) RNK
+FROM
+exp_Normalized_Trans
+INNER JOIN m_validate_date ON exp_Normalized_Trans.source_record_id = m_validate_date.source_record_id
+LEFT JOIN (
+SELECT
+MEMB_SKEY,
+BATCH_NUM,
+BATCH_TYPE,
+BATCH_DT
+FROM FED_BATCH_TRANS_DETAILS
+) LKP ON LKP.MEMB_SKEY = exp_Normalized_Trans.MEMBER_SKEY AND LKP.BATCH_NUM = exp_Normalized_Trans.BATCH_NBR AND LKP.BATCH_TYPE = exp_Normalized_Trans.BATCH_TYPE AND LKP.BATCH_DT = m_validate_date.out_DATE_DT
+QUALIFY RNK = 1
+);
+
+
+-- Component rtr_Batch_Trans_Details_INS, Type ROUTER Output Group INS
+SELECT
+LKP_FED_BATCH_TRANS_DETAILS.MEMB_SKEY as MEMB_SKEY_LKP,
+exp_Normalized_Trans.MEMBER_SKEY as MEMBER_SKEY_SRC,
+exp_Normalized_Trans.BATCH_NBR as BATCH_NBR_SRC,
+exp_Normalized_Trans.BATCH_TYPE as BATCH_TYPE_SRC,
+m_validate_date.out_DATE_DT as BATCH_DATE_SRC,
+m_lkp_Control_Tables.mplt_BATCH_ID as mplt_BATCH_ID,
+m_lkp_Control_Tables.mplt_PRGM_ID as mplt_PRGM_ID,
+m_lkp_Control_Tables.mplt_TABLE_ID as mplt_TABLE_ID,
+m_lkp_Control_Tables.mplt_PROJ_ID as mplt_PROJ_ID,
+exp_Normalized_Trans.source_record_id
+FROM
+exp_Normalized_Trans
+LEFT JOIN m_validate_date ON exp_Normalized_Trans.source_record_id = m_validate_date.source_record_id
+LEFT JOIN m_lkp_Control_Tables ON m_validate_date.source_record_id = m_lkp_Control_Tables.source_record_id
+LEFT JOIN LKP_FED_BATCH_TRANS_DETAILS ON m_lkp_Control_Tables.source_record_id = LKP_FED_BATCH_TRANS_DETAILS.source_record_id
+WHERE CASE WHEN LKP_FED_BATCH_TRANS_DETAILS.MEMB_SKEY IS NULL and m_validate_date.out_DATE_DT IS NOT NULL THEN TRUE ELSE FALSE END - - CASE WHEN TX_CD = ''NEW'' OR LKP_FED_BATCH_TRANS_DETAILS.MEMB_SKEY IS NULL THEN TRUE ELSE FALSE END;
+
+
+-- Component Shortcut_to_FED_BATCH_TRANS_DETAILS, Type TARGET 
+INSERT INTO DB_T_CORE_PROD.FED_BATCH_TRANS_DETAILS
+(
+MEMB_SKEY,
+BATCH_NUM,
+BATCH_TYPE,
+BATCH_DT,
+ECTL_INS_BATCH_ID,
+ECTL_INS_PRGM_ID
+)
+SELECT
+rtr_Batch_Trans_Details_INS.MEMBER_SKEY_SRC as MEMB_SKEY,
+rtr_Batch_Trans_Details_INS.BATCH_NBR_SRC as BATCH_NUM,
+rtr_Batch_Trans_Details_INS.BATCH_TYPE_SRC as BATCH_TYPE,
+rtr_Batch_Trans_Details_INS.BATCH_DATE_SRC as BATCH_DT,
+rtr_Batch_Trans_Details_INS.mplt_BATCH_ID as ECTL_INS_BATCH_ID,
+rtr_Batch_Trans_Details_INS.mplt_PRGM_ID as ECTL_INS_PRGM_ID
+FROM
+rtr_Batch_Trans_Details_INS;
+
+
+END; ';

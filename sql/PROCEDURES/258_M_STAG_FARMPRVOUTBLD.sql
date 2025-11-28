@@ -1,0 +1,138 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_STAG_FARMPRVOUTBLD("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' DECLARE FEED_IND varchar;
+FEED_DT date;
+BEGIN 
+
+FEED_IND:=(select DAILY_FEED_IND from DB_T_CTRL_PROD.ECTL_JOB_LOAD_STATUS_LOG where ECTL_BATCH_ID= :run_id);
+FEED_DT:=(select current_date);
+
+-- Component FARMPRVOUTBLD1, Type TRUNCATE_TABLE 
+TRUNCATE TABLE DB_T_STAG_MEMBXREF_PROD.FARMPRVOUTBLD;
+
+
+-- PIPELINE START FOR 1
+
+-- Component SQ_FARMPRVOUTBLD3, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_FARMPRVOUTBLD3 AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as record_count,
+$2 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT count(*) as record_count
+FROM
+DB_T_STAG_MEMBXREF_PROD.FARMPRVOUTBLD
+) SRC
+)
+);
+
+
+-- Component exp_rec_cnt, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_rec_cnt AS
+(
+SELECT
+SQ_FARMPRVOUTBLD3.record_count as record_count,
+:feed_ind as feed_ind,
+:feed_dt as feed_dt,
+SQ_FARMPRVOUTBLD3.source_record_id
+FROM
+SQ_FARMPRVOUTBLD3
+);
+
+
+-- Component TRG_MEMBXREF, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE TRG_MEMBXREF AS
+(
+SELECT
+exp_rec_cnt.feed_ind as feed_ind,
+exp_rec_cnt.feed_dt as feed_dt,
+exp_rec_cnt.record_count as record_cnt
+FROM
+exp_rec_cnt
+);
+
+
+-- Component TRG_MEMBXREF, Type EXPORT_DATA Exporting data
+;
+
+
+-- PIPELINE END FOR 1
+
+-- PIPELINE START FOR 2
+
+-- Component SQ_FARMPRVOUTBLD2, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_FARMPRVOUTBLD2 AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as SC_POLICY_NUM,
+$2 as RFD_PRV_OUT_NDX,
+$3 as RFD_PCLASS,
+$4 as RFD_PECOV,
+$5 as RFD_E_DT,
+$6 as RFD_PE_DED,
+$7 as RFD_PE_KBRACE,
+$8 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT
+FARMPRVOUTBLD3.SC_POLICY_NUM,
+FARMPRVOUTBLD3.RFD_PRV_OUT_NDX,
+FARMPRVOUTBLD3.RFD_PCLASS,
+FARMPRVOUTBLD3.RFD_PECOV,
+FARMPRVOUTBLD3.RFD_E_DT,
+FARMPRVOUTBLD3.RFD_PE_DED,
+FARMPRVOUTBLD3.RFD_PE_KBRACE
+FROM DB_T_STAG_MEMBXREF_PROD.FARMPRVOUTBLD FARMPRVOUTBLD3
+) SRC
+)
+);
+
+
+-- Component exp_pass_through, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_through AS
+(
+SELECT
+SQ_FARMPRVOUTBLD2.SC_POLICY_NUM as SC_POLICY_NUM,
+SQ_FARMPRVOUTBLD2.RFD_PRV_OUT_NDX as RFD_PRV_OUT_NDX,
+SQ_FARMPRVOUTBLD2.RFD_PCLASS as RFD_PCLASS,
+SQ_FARMPRVOUTBLD2.RFD_PECOV as RFD_PECOV,
+SQ_FARMPRVOUTBLD2.RFD_E_DT as RFD_E_DT,
+SQ_FARMPRVOUTBLD2.RFD_PE_DED as RFD_PE_DED,
+SQ_FARMPRVOUTBLD2.RFD_PE_KBRACE as RFD_PE_KBRACE,
+SQ_FARMPRVOUTBLD2.source_record_id
+FROM
+SQ_FARMPRVOUTBLD2
+);
+
+
+-- Component FARMPRVOUTBLD1, Type TARGET 
+INSERT INTO DB_T_STAG_MEMBXREF_PROD.FARMPRVOUTBLD
+(
+SC_POLICY_NUM,
+RFD_PRV_OUT_NDX,
+RFD_PCLASS,
+RFD_PECOV,
+RFD_E_DT,
+RFD_PE_DED,
+RFD_PE_KBRACE
+)
+SELECT
+exp_pass_through.SC_POLICY_NUM as SC_POLICY_NUM,
+exp_pass_through.RFD_PRV_OUT_NDX as RFD_PRV_OUT_NDX,
+exp_pass_through.RFD_PCLASS as RFD_PCLASS,
+exp_pass_through.RFD_PECOV as RFD_PECOV,
+exp_pass_through.RFD_E_DT as RFD_E_DT,
+exp_pass_through.RFD_PE_DED as RFD_PE_DED,
+exp_pass_through.RFD_PE_KBRACE as RFD_PE_KBRACE
+FROM
+exp_pass_through;
+
+
+-- PIPELINE END FOR 2
+
+END; ';

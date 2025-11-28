@@ -1,0 +1,129 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_STAG_LIFEPENDINGREQS("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' 
+DECLARE FEED_IND varchar;
+FEED_DT date;
+BEGIN 
+
+FEED_IND:=(select DAILY_FEED_IND from DB_T_CTRL_PROD.ECTL_JOB_LOAD_STATUS_LOG where ECTL_BATCH_ID= :run_id); 
+FEED_DT:=(select current_date); 
+
+-- Component LIFEPENDINGREQS2, Type TRUNCATE_TABLE 
+TRUNCATE TABLE DB_T_STAG_MEMBXREF_PROD.LIFEPENDINGREQS;
+
+
+-- PIPELINE START FOR 1
+
+-- Component SQ_LIFEPENDINGREQS, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_LIFEPENDINGREQS AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as record_count,
+$2 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT count(*) as record_count
+FROM
+DB_T_STAG_MEMBXREF_PROD.LIFEPENDINGREQS
+) SRC
+)
+);
+
+
+-- Component exp_rec_cnt1, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_rec_cnt1 AS
+(
+SELECT
+SQ_LIFEPENDINGREQS.record_count as record_count,
+:feed_ind as feed_ind,
+:feed_dt as feed_dt,
+SQ_LIFEPENDINGREQS.source_record_id
+FROM
+SQ_LIFEPENDINGREQS
+);
+
+
+-- Component TRG_MEMBXREF, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE TRG_MEMBXREF AS
+(
+SELECT
+exp_rec_cnt1.feed_ind as feed_ind,
+exp_rec_cnt1.feed_dt as feed_dt,
+exp_rec_cnt1.record_count as record_cnt
+FROM
+exp_rec_cnt1
+);
+
+
+-- Component TRG_MEMBXREF, Type EXPORT_DATA Exporting data
+;
+
+
+-- PIPELINE END FOR 1
+
+-- PIPELINE START FOR 2
+
+-- Component SQ_LIFEPENDINGREQS2, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_LIFEPENDINGREQS2 AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as SC_POLICY_NUM,
+$2 as LF_REQ_NDX,
+$3 as LF_DATE_ORD,
+$4 as LF_REQ_CODE,
+$5 as LF_ADL_DATA,
+$6 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT
+LIFEPENDINGREQS.SC_POLICY_NUM,
+LIFEPENDINGREQS.LF_REQ_NDX,
+LIFEPENDINGREQS.LF_DATE_ORD,
+LIFEPENDINGREQS.LF_REQ_CODE,
+LIFEPENDINGREQS.LF_ADL_DATA
+FROM DB_T_STAG_MEMBXREF_PROD.LIFEPENDINGREQS
+) SRC
+)
+);
+
+
+-- Component exp_pass_through, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_through AS
+(
+SELECT
+SQ_LIFEPENDINGREQS2.SC_POLICY_NUM as SC_POLICY_NUM,
+SQ_LIFEPENDINGREQS2.LF_REQ_NDX as LF_REQ_NDX,
+SQ_LIFEPENDINGREQS2.LF_DATE_ORD as LF_DATE_ORD,
+SQ_LIFEPENDINGREQS2.LF_REQ_CODE as LF_REQ_CODE,
+SQ_LIFEPENDINGREQS2.LF_ADL_DATA as LF_ADL_DATA,
+SQ_LIFEPENDINGREQS2.source_record_id
+FROM
+SQ_LIFEPENDINGREQS2
+);
+
+
+-- Component LIFEPENDINGREQS2, Type TARGET 
+INSERT INTO DB_T_STAG_MEMBXREF_PROD.LIFEPENDINGREQS
+(
+SC_POLICY_NUM,
+LF_REQ_NDX,
+LF_DATE_ORD,
+LF_REQ_CODE,
+LF_ADL_DATA
+)
+SELECT
+exp_pass_through.SC_POLICY_NUM as SC_POLICY_NUM,
+exp_pass_through.LF_REQ_NDX as LF_REQ_NDX,
+exp_pass_through.LF_DATE_ORD as LF_DATE_ORD,
+exp_pass_through.LF_REQ_CODE as LF_REQ_CODE,
+exp_pass_through.LF_ADL_DATA as LF_ADL_DATA
+FROM
+exp_pass_through;
+
+
+-- PIPELINE END FOR 2
+
+END; ';

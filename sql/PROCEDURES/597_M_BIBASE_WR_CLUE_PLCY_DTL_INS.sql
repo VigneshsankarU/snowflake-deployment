@@ -1,0 +1,160 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_BIBASE_WR_CLUE_PLCY_DTL_INS("WORKLET_NAME" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' DECLARE
+  run_id STRING;
+  workflow_name STRING;
+  session_name STRING;
+BEGIN
+  run_id := public.func_get_scoped_param(:run_id, ''run_id'', :workflow_name, :worklet_name, :session_name);
+  workflow_name := public.func_get_scoped_param(:run_id, ''workflow_name'', :workflow_name, :worklet_name, :session_name);
+  session_name := public.func_get_scoped_param(:run_id, ''session_name'', :workflow_name, :worklet_name, :session_name);
+ 
+
+-- Component SQ_WR_CLUE_PLCY_DTL, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_WR_CLUE_PLCY_DTL AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as PLCY_NUM,
+$2 as CLM_NUM,
+$3 as CLM_LOSS_DT,
+$4 as INSRNC_CVGE_TYPE_DESC,
+$5 as CLM_AMT,
+$6 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT  PLCY_NUM,
+
+CLM_NUM,
+
+CLM_LOSS_DT,
+
+INSRNC_CVGE_TYPE_DESC,
+
+CLM_AMT 
+
+ FROM (
+
+SELECT PLCY_NUM,
+
+CLM_NUM,
+
+CAST(CLM_DTTM AS DATE) AS CLM_LOSS_DT, 
+
+B.INSRNC_CVGE_TYPE_CD,
+
+SUM(CLM_PMT_AMT) AS CLM_AMT,
+
+cast(''GW'' AS VARCHAR(10)) SRC_IDNTFTN_SYS
+
+FROM DB_T_PROD_CORE.PRIOR_LOSS_SUMRY A 
+
+LEFT OUTER JOIN DB_T_PROD_CORE.PRIOR_LOSS_CLM_PMT B ON 
+
+A.PRIOR_LOSS_SUMRY_ID = B.PRIOR_LOSS_SUMRY_ID
+
+WHERE A.PRIOR_LOSS_SRC_CD = ''CLUE'' 
+
+GROUP BY 1,2,3,4
+
+
+
+
+
+UNION ALL
+
+ 
+
+
+
+SELECT
+
+PLCY_NBR AS PLCY_NUM,
+
+ULH_CLAIM_NBR AS CLM_NUM,
+
+ULH_LOSS_DT AS CLM_LOSS_DT,
+
+CASE WHEN UW_LOSS_TYPE_CD=''CP'' THEN ''COMP'' 
+
+WHEN UW_LOSS_TYPE_CD=''CO'' THEN ''COLL''
+
+WHEN UW_LOSS_TYPE_CD=''OT'' THEN ''OTH''
+
+WHEN UW_LOSS_TYPE_CD=''MP'' THEN ''MED''
+
+WHEN UW_LOSS_TYPE_CD=''PD'' THEN ''PD''
+
+WHEN UW_LOSS_TYPE_CD=''RR'' THEN ''LOU''
+
+WHEN UW_LOSS_TYPE_CD=''GL'' THEN ''GLAS''
+
+WHEN UW_LOSS_TYPE_CD=''PI'' THEN ''PI''
+
+WHEN UW_LOSS_TYPE_CD=''BI'' THEN ''BI''
+
+WHEN UW_LOSS_TYPE_CD=''UM'' THEN ''UM''
+
+WHEN UW_LOSS_TYPE_CD=''TL'' THEN ''ERS''
+
+WHEN UW_LOSS_TYPE_CD=''UN'' THEN ''UNDM''
+
+WHEN UW_LOSS_TYPE_CD=''ME'' THEN ''MEDEXP''
+
+WHEN UW_LOSS_TYPE_CD=''THE'' THEN ''THFT''
+
+ELSE UW_LOSS_TYPE_CD END AS INSRNC_CVGE_TYPE_CD,
+
+SUM(ULH_LOSS_AMT) AS CLM_AMT,
+
+cast(''DB2'' AS VARCHAR(10)) SRC_IDNTFTN_SYS
+
+FROM DB_T_ONSITE_PROD.CLUE_POLICY_SUMM AS L
+
+GROUP BY 1,2,3,4 
+
+)T
+
+LEFT OUTER JOIN DB_T_PROD_CORE.INSRNC_CVGE_TYPE I ON T.INSRNC_CVGE_TYPE_CD = I.INSRNC_CVGE_TYPE_CD
+) SRC
+)
+);
+
+
+-- Component exp_wr_clue_plcy_dtl, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_wr_clue_plcy_dtl AS
+(
+SELECT
+SQ_WR_CLUE_PLCY_DTL.PLCY_NUM as PLCY_NUM,
+SQ_WR_CLUE_PLCY_DTL.CLM_NUM as CLM_NUM,
+SQ_WR_CLUE_PLCY_DTL.CLM_LOSS_DT as CLM_LOSS_DT,
+SQ_WR_CLUE_PLCY_DTL.INSRNC_CVGE_TYPE_DESC as INSRNC_CVGE_TYPE_DESC,
+SQ_WR_CLUE_PLCY_DTL.CLM_AMT as CLM_AMT,
+SQ_WR_CLUE_PLCY_DTL.source_record_id
+FROM
+SQ_WR_CLUE_PLCY_DTL
+);
+
+
+-- Component WR_CLUE_PLCY_DTL, Type TARGET 
+INSERT INTO DB_V_PROD_PRES.WR_CLUE_PLCY_DTL
+(
+PLCY_NUM,
+CLM_NUM,
+CLM_LOSS_DT,
+INSRNC_CVGE_TYPE_DESC,
+CLM_AMT
+)
+SELECT
+exp_wr_clue_plcy_dtl.PLCY_NUM as PLCY_NUM,
+exp_wr_clue_plcy_dtl.CLM_NUM as CLM_NUM,
+exp_wr_clue_plcy_dtl.CLM_LOSS_DT as CLM_LOSS_DT,
+exp_wr_clue_plcy_dtl.INSRNC_CVGE_TYPE_DESC as INSRNC_CVGE_TYPE_DESC,
+exp_wr_clue_plcy_dtl.CLM_AMT as CLM_AMT
+FROM
+exp_wr_clue_plcy_dtl;
+
+
+END; ';

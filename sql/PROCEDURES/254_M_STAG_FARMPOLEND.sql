@@ -1,0 +1,143 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_STAG_FARMPOLEND("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' DECLARE FEED_IND varchar;
+FEED_DT date;
+BEGIN 
+
+FEED_IND:=(select DAILY_FEED_IND from DB_T_CTRL_PROD.ECTL_JOB_LOAD_STATUS_LOG where ECTL_BATCH_ID= :run_id);  
+FEED_DT:=(select current_date);  
+
+-- Component FARMPOLEND1, Type TRUNCATE_TABLE 
+TRUNCATE TABLE DB_T_STAG_MEMBXREF_PROD.FARMPOLEND;
+
+
+-- PIPELINE START FOR 1
+
+-- Component SQ_FARMPOLEND2, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_FARMPOLEND2 AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as SC_POLICY_NUM,
+$2 as RFD_END_NDX,
+$3 as RFD_END_NO,
+$4 as RFD_END_COV,
+$5 as RFD_PEND_NO,
+$6 as RFD_PEND_COV,
+$7 as RFD_END_PRM,
+$8 as RFD_END_DT,
+$9 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT
+FARMPOLEND.SC_POLICY_NUM,
+FARMPOLEND.RFD_END_NDX,
+FARMPOLEND.RFD_END_NO,
+FARMPOLEND.RFD_END_COV,
+FARMPOLEND.RFD_PEND_NO,
+FARMPOLEND.RFD_PEND_COV,
+FARMPOLEND.RFD_END_PRM,
+FARMPOLEND.RFD_END_DT
+FROM DB_T_STAG_MEMBXREF_PROD.FARMPOLEND
+) SRC
+)
+);
+
+
+-- Component exp_pass_through, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_through AS
+(
+SELECT
+SQ_FARMPOLEND2.SC_POLICY_NUM as SC_POLICY_NUM,
+SQ_FARMPOLEND2.RFD_END_NDX as RFD_END_NDX,
+SQ_FARMPOLEND2.RFD_END_NO as RFD_END_NO,
+SQ_FARMPOLEND2.RFD_END_COV as RFD_END_COV,
+SQ_FARMPOLEND2.RFD_PEND_NO as RFD_PEND_NO,
+SQ_FARMPOLEND2.RFD_PEND_COV as RFD_PEND_COV,
+SQ_FARMPOLEND2.RFD_END_PRM as RFD_END_PRM,
+SQ_FARMPOLEND2.RFD_END_DT as RFD_END_DT,
+SQ_FARMPOLEND2.source_record_id
+FROM
+SQ_FARMPOLEND2
+);
+
+
+-- Component FARMPOLEND1, Type TARGET 
+INSERT INTO DB_T_STAG_MEMBXREF_PROD.FARMPOLEND
+(
+SC_POLICY_NUM,
+RFD_END_NDX,
+RFD_END_NO,
+RFD_END_COV,
+RFD_PEND_NO,
+RFD_PEND_COV,
+RFD_END_PRM,
+RFD_END_DT
+)
+SELECT
+exp_pass_through.SC_POLICY_NUM as SC_POLICY_NUM,
+exp_pass_through.RFD_END_NDX as RFD_END_NDX,
+exp_pass_through.RFD_END_NO as RFD_END_NO,
+exp_pass_through.RFD_END_COV as RFD_END_COV,
+exp_pass_through.RFD_PEND_NO as RFD_PEND_NO,
+exp_pass_through.RFD_PEND_COV as RFD_PEND_COV,
+exp_pass_through.RFD_END_PRM as RFD_END_PRM,
+exp_pass_through.RFD_END_DT as RFD_END_DT
+FROM
+exp_pass_through;
+
+
+-- PIPELINE END FOR 1
+
+-- PIPELINE START FOR 2
+
+-- Component SQ_FARMPOLEND3, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_FARMPOLEND3 AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as record_count,
+$2 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT count(*) as record_count
+FROM
+DB_T_STAG_MEMBXREF_PROD.FARMPOLEND
+) SRC
+)
+);
+
+
+-- Component exp_rec_cnt1, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_rec_cnt1 AS
+(
+SELECT
+SQ_FARMPOLEND3.record_count as record_count,
+:feed_ind as feed_ind,
+:feed_dt as feed_dt,
+SQ_FARMPOLEND3.source_record_id
+FROM
+SQ_FARMPOLEND3
+);
+
+
+-- Component TRG_MEMBXREF, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE TRG_MEMBXREF AS
+(
+SELECT
+exp_rec_cnt1.feed_ind as feed_ind,
+exp_rec_cnt1.feed_dt as feed_dt,
+exp_rec_cnt1.record_count as record_cnt
+FROM
+exp_rec_cnt1
+);
+
+
+-- Component TRG_MEMBXREF, Type EXPORT_DATA Exporting data
+;
+
+
+-- PIPELINE END FOR 2
+
+END; ';

@@ -1,0 +1,128 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_STAG_LIFERIDERBENINFO("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' DECLARE FEED_IND varchar;
+FEED_DT varchar;
+BEGIN 
+
+FEED_IND:=(select DAILY_FEED_IND from DB_T_CTRL_PROD.ECTL_JOB_LOAD_STATUS_LOG where ECTL_BATCH_ID= :run_id); 
+FEED_DT:=(select current_date); 
+
+-- Component LIFERIDERBENINFO2, Type TRUNCATE_TABLE 
+TRUNCATE TABLE DB_T_STAG_MEMBXREF_PROD.LIFERIDERBENINFO;
+
+
+-- PIPELINE START FOR 1
+
+-- Component SQ_LIFERIDERBENINFO3, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_LIFERIDERBENINFO3 AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as record_count,
+$2 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT count(*) as record_count
+FROM
+DB_T_STAG_MEMBXREF_PROD.LIFERIDERBENINFO
+) SRC
+)
+);
+
+
+-- PIPELINE START FOR 2
+
+-- Component SQ_LIFERIDERBENINFO2, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_LIFERIDERBENINFO2 AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as SC_POLICY_NUM,
+$2 as LF_RDR_NDX,
+$3 as LF_RDR_PLAN,
+$4 as LF_RDR_VOL,
+$5 as LF_RDR_ANPRM,
+$6 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT
+LIFERIDERBENINFO3.SC_POLICY_NUM,
+LIFERIDERBENINFO3.LF_RDR_NDX,
+LIFERIDERBENINFO3.LF_RDR_PLAN,
+LIFERIDERBENINFO3.LF_RDR_VOL,
+LIFERIDERBENINFO3.LF_RDR_ANPRM
+FROM DB_T_STAG_MEMBXREF_PROD.LIFERIDERBENINFO LIFERIDERBENINFO3
+) SRC
+)
+);
+
+
+-- Component exp_pass_through, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_through AS
+(
+SELECT
+SQ_LIFERIDERBENINFO2.SC_POLICY_NUM as SC_POLICY_NUM,
+SQ_LIFERIDERBENINFO2.LF_RDR_NDX as LF_RDR_NDX,
+SQ_LIFERIDERBENINFO2.LF_RDR_PLAN as LF_RDR_PLAN,
+SQ_LIFERIDERBENINFO2.LF_RDR_VOL as LF_RDR_VOL,
+SQ_LIFERIDERBENINFO2.LF_RDR_ANPRM as LF_RDR_ANPRM,
+SQ_LIFERIDERBENINFO2.source_record_id
+FROM
+SQ_LIFERIDERBENINFO2
+);
+
+
+-- Component exp_rec_cnt1, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_rec_cnt1 AS
+(
+SELECT
+SQ_LIFERIDERBENINFO3.record_count as record_count,
+:feed_ind as feed_ind,
+:feed_dt as feed_dt,
+SQ_LIFERIDERBENINFO3.source_record_id
+FROM
+SQ_LIFERIDERBENINFO3
+);
+
+
+-- Component LIFERIDERBENINFO2, Type TARGET 
+INSERT INTO DB_T_STAG_MEMBXREF_PROD.LIFERIDERBENINFO
+(
+SC_POLICY_NUM,
+LF_RDR_NDX,
+LF_RDR_PLAN,
+LF_RDR_VOL,
+LF_RDR_ANPRM
+)
+SELECT
+exp_pass_through.SC_POLICY_NUM as SC_POLICY_NUM,
+exp_pass_through.LF_RDR_NDX as LF_RDR_NDX,
+exp_pass_through.LF_RDR_PLAN as LF_RDR_PLAN,
+exp_pass_through.LF_RDR_VOL as LF_RDR_VOL,
+exp_pass_through.LF_RDR_ANPRM as LF_RDR_ANPRM
+FROM
+exp_pass_through;
+
+
+-- PIPELINE END FOR 2
+
+-- Component TRG_MEMBXREF, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE TRG_MEMBXREF AS
+(
+SELECT
+exp_rec_cnt1.feed_ind as feed_ind,
+exp_rec_cnt1.feed_dt as feed_dt,
+exp_rec_cnt1.record_count as record_cnt
+FROM
+exp_rec_cnt1
+);
+
+
+-- Component TRG_MEMBXREF, Type EXPORT_DATA Exporting data
+;
+
+
+-- PIPELINE END FOR 1
+
+END; ';

@@ -1,0 +1,1094 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_BASE_MCAS_POLICIES_HOME_DETAIL("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' DECLARE MCAS_START_DT varchar;
+MCAS_END_DT varchar;
+BEGIN 
+
+MCAS_START_DT:=''2024-01-01''; 
+MCAS_END_DT:=''2024-01-01''; 
+
+
+
+-- Component SQ_AGMT, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_AGMT AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as UNDRWRTG_CMPY,
+$2 as RISK_STATE,
+$3 as LOB,
+$4 as PLCY_TYPE,
+$5 as HOST_AGMT_NUM,
+$6 as AGMT_OPN_DTTM,
+$7 as AGMT_PLND_EXPN_DTTM,
+$8 as AGMT_EFF_DTTM,
+$9 as NEW_AGMT_EFF_DTTM,
+$10 as DWELL_IND,
+$11 as PROP_IND,
+$12 as AGMT_CUR_STS_CD,
+$13 as AGMT_CUR_STS_RSN_CD,
+$14 as CAN_DTTM,
+$15 as CAN_RSN_CD,
+$16 as CAN_SRC,
+$17 as NON_RENEWAL_DTTM,
+$18 as NON_RENEWAL_STS,
+$19 as REWRT_DTTM,
+$20 as RNST_DTTM,
+$21 as TR_PREM_AMT,
+$22 as MODL_NUM,
+$23 as TERM_NUM,
+$24 as AGMT_ID,
+$25 as MODL_CRTN_DTTM,
+$26 as AGMT_STS_STRT_DTTM,
+$27 as AGMT_STS_CD,
+$28 as AGMT_STS_SRC_TYPE_CD,
+$29 as QUOTN_STS_TYPE_CD,
+$30 as IND,
+$31 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+WITH MCAS_HOME_DETAIL_INFORCE AS (
+
+SELECT DISTINCT COMPANY, --DB_T_SHRD_PROD.
+STATE,LOB_TYPE,PLCY_TYPE,HOST_AGMT_NUM,AGMT_OPN_DTTM,AGMT_PLND_EXPN_DTTM,AGMT_EFF_DTTM,NEW_AGMT_EFF_DTTM,
+
+DWELL_IND,PROP_IND,AGMT_CUR_STS_CD,AGMT_CUR_STS_RSN_CD,CAN_DTTM,CAN_RSN_CD,CAN_SRC,NON_RENEWAL_DTTM ,NON_RENEWAL_STS,
+
+REWRT_DTTM,RNST_DTTM, --DB_T_PROD_COMN.
+PREMIUM,MODL_NUM,TERM_NUM,AGMT_ID,MODL_CRTN_DTTM,
+
+AGMT_STS_STRT_DTTM,AGMT_STS_CD,AGMT_STS_SRC_TYPE_CD,QUOTN_STS_TYPE_CD,cast(''I'' as varchar(10)) AS IND
+
+FROM (
+
+SELECT DISTINCT AGT.*, CMP.COMPANY,RSKSTATE.GEOGRCL_AREA_SHRT_NAME AS STATE,REWRT.REWRT_DTTM,RNST.RNST_DTTM,
+
+cast(0 as decimal(18,2)) AS PREMIUM,LOB.LOB_TYPE,PA.DWELL_IND,PA.PROP_IND,PA.PRTY_ASSET_SBTYPE_CD,PA.asset_host_id_val,
+
+can_dt.can_dttm,can_dt.CAN_RSN_CD,can_dt.CAN_SRC,LOB.PROD_NAME as PLCY_TYPE,NON_DTTM.NON_RENEWAL_DTTM,NON_DTTM.NON_RENEWAL_STS
+
+  FROM (
+
+SELECT PPV.AGMT_ID
+
+ ,PPV.HOST_AGMT_NUM
+
+ ,PPV.AGMT_OPN_DTTM
+
+ ,PPV.AGMT_EFF_DTTM
+
+ ,PPV.AGMT_PLND_EXPN_DTTM
+
+ ,PPV.TERM_NUM,PPV.MODL_NUM
+
+ ,PPV.LGCY_PLCY_IND,PPV.AGMT_CUR_STS_CD
+
+ ,PPV.AGMT_CUR_STS_RSN_CD,PPV.NEW_AGMT_EFF_DTTM,PPV.MODL_CRTN_DTTM
+
+ ,IQ.QUOTN_STS_TYPE_CD,AP.APLCTN_TYPE_CD
+
+ ,PPV.AGMT_PRCSG_DTTM,A_S.AGMT_STS_STRT_DTTM,A_S.AGMT_STS_CD,A_S.AGMT_STS_SRC_TYPE_CD FROM (
+
+SELECT DISTINCT
+
+  A.AGMT_ID
+
+ ,A.HOST_AGMT_NUM
+
+ ,A.AGMT_OPN_DTTM
+
+ ,A.AGMT_EFF_DTTM
+
+ ,A.AGMT_PLND_EXPN_DTTM
+
+ ,A.TERM_NUM,A.MODL_NUM
+
+ ,A.LGCY_PLCY_IND,A.AGMT_PRCSG_DTTM,A.MODL_CRTN_DTTM,
+
+ A.AGMT_CUR_STS_CD,A.AGMT_CUR_STS_RSN_CD,
+
+ CASE    WHEN A.MODL_EFF_DTTM > A.MODL_CRTN_DTTM THEN A.MODL_EFF_DTTM 
+
+ELSE    A.MODL_CRTN_DTTM 
+
+END     AS NEW_AGMT_EFF_DTTM
+
+ FROM DB_T_PROD_CORE.AGMT A
+
+ INNER JOIN DB_T_PROD_CORE.AGMT_PROD AP ON A.AGMT_ID=AP.AGMT_ID AND AP.AGMT_PROD_ROLE_CD=''PLCYTYPE''
+
+ INNER JOIN DB_T_PROD_CORE.PROD P ON AP.PROD_ID=P.PROD_ID AND P.INSRNC_TYPE_CD=''PROPTY''
+
+ WHERE A.AGMT_TYPE_CD = ''PPV''
+
+AND     A.TRANS_STRT_DTTM = 
+
+(
+
+SELECT  MIN(T2.TRANS_STRT_DTTM) 
+
+FROM    DB_T_PROD_CORE.AGMT T2 
+
+WHERE   A.AGMT_ID = T2.AGMT_ID) 
+
+/* EIM-50556 Starts */
+AND TRY_TO_DATE( cast(NEW_AGMT_EFF_DTTM as string), ''MM/DD/YYYY'') <= TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'')
+AND TRY_TO_DATE( cast(agmt_eff_dttm as string)) <= TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'')
+AND TRY_TO_DATE( cast(agmt_plnd_expn_dttm as string)) >= TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'')
+
+/* EIM-50556 Ends */
+) PPV
+
+LEFT JOIN 
+
+(
+
+SELECT  HOST_AGMT_NUM, TERM_NUM,AGMT_ID,AGMT_TYPE_CD 
+
+FROM    DB_T_PROD_CORE.AGMT 
+
+WHERE   AGMT_TYPE_CD = ''POLTRM'' 
+
+        AND     TRY_TO_DATE(:MCAS_End_dt, ''mm/DD/yyyy'') 
+
+BETWEEN AGMT_EFF_DTTM AND AGMT_PLND_EXPN_DTTM 
+
+GROUP   BY 1,2,3,4) TRM 
+
+        ON      PPV.HOST_AGMT_NUM = TRM.HOST_AGMT_NUM 
+
+        AND     PPV.TERM_NUM = TRM.TERM_NUM  
+
+INNER JOIN 
+
+DB_T_PROD_CORE.AGMT_STS A_S 
+
+        ON      PPV.AGMT_ID = A_S.AGMT_ID  
+AND TRY_TO_DATE(  cast(A_S.AGMT_STS_STRT_DTTM as string), ''MM/DD/YYYY'') <= TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'')
+
+
+        AND     A_S.AGMT_STS_CD <> ''CNFRMDDT'' 
+
+
+
+LEFT OUTER JOIN DB_T_PROD_CORE.AGMT_ASSET AA ON AA.AGMT_ID = PPV.AGMT_ID AND CAST(AA.EDW_END_DTTM AS DATE) = ''9999-12-31'' 
+
+LEFT  OUTER JOIN DB_T_PROD_CORE.APLCTN AP ON AP.HOST_APLCTN_NUM=PPV.HOST_AGMT_NUM AND CAST(AP.EDW_END_DTTM AS DATE) = ''9999-12-31'' 
+
+LEFT OUTER JOIN DB_T_PROD_CORE.INSRNC_QUOTN IQ ON AP.APLCTN_ID = IQ.APLCTN_ID AND CAST(IQ.EDW_END_DTTM AS DATE) = ''9999-12-31'' 
+
+
+
+QUALIFY ROW_NUMBER() OVER(PARTITION BY PPV.AGMT_ID 
+
+ORDER   BY A_S.AGMT_STS_STRT_DTTM DESC) = 1 
+
+)  AGT  
+
+
+
+/* COMPANY  */
+INNER JOIN  (
+
+SELECT DISTINCT 
+
+   PA.AGMT_ID
+
+   ,INTRNL_ORG_NUM COMPANY
+
+   ,PRTY_AGMT_ROLE_CD
+
+   FROM DB_T_PROD_CORE.PRTY_AGMT PA
+
+   LEFT JOIN --EVIEWDB_EDW. 
+   DB_T_PROD_CORE.INTRNL_ORG IO ON PA.PRTY_ID = IO.INTRNL_ORG_PRTY_ID
+
+   WHERE PA.PRTY_AGMT_ROLE_CD = ''CMP''
+
+   AND CAST(IO.EDW_END_DTTM AS DATE) = ''9999-12-31''
+
+   AND INTRNL_ORG_SBTYPE_CD = ''CO''
+
+   AND CAST(PA.EDW_END_DTTM AS DATE) = ''9999-12-31''
+
+) CMP ON AGT.AGMT_ID = CMP.AGMT_ID
+
+
+
+/* RISK DB_T_SHRD_PROD.STATE  */
+INNER JOIN 
+
+(
+
+SELECT  A.AGMT_ID, C.GEOGRCL_AREA_SHRT_NAME /* AS RISKSTATE */
+FROM    
+
+ ( 
+
+SELECT DISTINCT AGMT_ID,LOC_ID, AGMT_LOCTR_ROLE_TYPE_CD
+
+FROM    DB_T_PROD_CORE.AGMT_LOCTR 
+
+WHERE   CAST(EDW_END_DTTM AS DATE) = ''9999-12-31'')  A 
+
+INNER JOIN DB_T_PROD_CORE.LOCTR B 
+
+    ON  (A.LOC_ID = B.LOCTR_ID 
+
+    AND B.GEOGRCL_AREA_SBTYPE_CD = ''TER'')
+
+INNER JOIN DB_T_PROD_CORE.TERR C 
+
+    ON  A.LOC_ID = C.TERR_ID 
+
+    AND CAST(C.EDW_END_DTTM AS DATE) = ''9999-12-31''
+
+WHERE   A.AGMT_LOCTR_ROLE_TYPE_CD = ''AGTWINST''    
+
+) RSKSTATE  
+
+    ON  AGT.AGMT_ID = RSKSTATE.AGMT_ID
+
+    
+
+LEFT JOIN ( 
+
+    SELECT  HOST_AGMT_NUM ,MAX(AG.MODL_EFF_DTTM) AS REWRT_DTTM
+
+FROM DB_T_PROD_CORE.AGMT AG
+
+JOIN DB_T_PROD_CORE.EV_STS ES ON ES.AGMT_ID = AG.AGMT_ID         
+
+JOIN DB_T_PROD_CORE.EV EVV ON EVV.EV_ID =ES.EV_ID 
+
+AND EV_ACTVY_TYPE_CD=''REWRT''
+
+WHERE
+  TRY_TO_DATE( cast(AG.MODL_EFF_DTTM as string), ''MM/DD/YYYY'') BETWEEN TRY_TO_DATE(:MCAS_Start_dt, ''MM/DD/YYYY'')
+  AND TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'')
+AND MODL_CRTN_DTTM --(DATE) 
+is not null 
+
+GROUP BY HOST_AGMT_NUM
+
+    ) REWRT 
+
+    on  agt.HOST_AGMT_NUM=REWRT.HOST_AGMT_NUM 
+
+
+
+LEFT JOIN ( 
+
+        SELECT  HOST_AGMT_NUM ,MAX(AG.MODL_EFF_DTTM) AS RNST_DTTM
+
+FROM DB_T_PROD_CORE.AGMT AG
+
+JOIN DB_T_PROD_CORE.EV_STS ES ON ES.AGMT_ID = AG.AGMT_ID         
+
+JOIN DB_T_PROD_CORE.EV EVV ON EVV.EV_ID =ES.EV_ID 
+
+AND EV_ACTVY_TYPE_CD=''REINSTATE''
+
+WHERE
+  TRY_TO_DATE( cast(AG.MODL_EFF_DTTM as string), ''MM/DD/YYYY'') BETWEEN TRY_TO_DATE(:MCAS_Start_dt, ''MM/DD/YYYY'')
+  AND TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'')
+
+AND MODL_CRTN_DTTM --(DATE) 
+is not null
+
+GROUP BY HOST_AGMT_NUM
+
+) RNST 
+
+    on  agt.HOST_AGMT_NUM=RNST.HOST_AGMT_NUM 
+
+
+
+
+
+
+
+/* LOB */
+INNER JOIN 
+
+(
+
+SELECT  B.AGMT_ID, decode(C.INSRNC_LOB_TYPE_CD,''HO'',''H'',''MH'',''T'',''SF'',''SF'') as LOB_TYPE,C.PROD_NAME 
+
+FROM    
+
+   ( 
+
+SELECT  DISTINCT PROD_ID,AGMT_ID
+
+	    FROM    DB_T_PROD_CORE.AGMT_PROD 
+
+	    WHERE   CAST(EDW_END_DTTM AS DATE)=''9999-12-31'') B 
+
+	    INNER JOIN DB_T_PROD_CORE.PROD C 
+
+    ON  B.PROD_ID = C.PROD_ID 
+
+    and  C.INSRNC_TYPE_CD=''PROPTY''
+
+    AND CAST(C.EDW_END_DTTM AS DATE)=''9999-12-31''
+
+) LOB 
+
+    ON  agt.AGMT_ID = LOB.AGMT_ID 
+
+    
+
+/*  Non Renewal date and Non Renewal Status */
+
+
+LEFT JOIN 
+
+(
+
+SELECT AG.HOST_AGMT_NUM as HOST_AGMT_NUM,QUOTN_STS_TYPE_CD as NON_RENEWAL_STS,
+
+max(IQ.QUOTN_PLND_AGMT_OPN_DTTM) as NON_RENEWAL_DTTM
+
+FROM DB_T_PROD_CORE.INSRNC_QUOTN IQ
+
+JOIN DB_T_PROD_CORE.APLCTN AP ON AP.APLCTN_ID = IQ.APLCTN_ID
+
+JOIN DB_T_PROD_CORE.AGMT AG on AP.HOST_APLCTN_NUM = AG.HOST_AGMT_NUM
+
+WHERE  QUOTN_STS_TYPE_CD = ''NONRNWD''
+
+AND TRY_TO_DATE( cast(QUOTN_PLND_AGMT_OPN_DTTM as string), ''MM/DD/YYYY'') BETWEEN TRY_TO_DATE(:MCAS_Start_dt, ''MM/DD/YYYY'')
+AND TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'')
+
+group by 1,2
+
+)NON_DTTM
+
+ON NON_DTTM.HOST_AGMT_NUM=AGT.HOST_AGMT_NUM
+
+
+
+/* INDICATOR */
+LEFT JOIN 
+
+(
+
+SELECT PAS.AGMT_ID, PRTY_ASSET_SBTYPE_CD,PAS.asset_host_id_val,MAX(PAS.DWELL_IND) DWELL_IND, MAX(PAS.PROP_IND) PROP_IND
+
+FROM  ( SELECT AA.AGMT_ID, PA.asset_host_id_val, PA.PRTY_ASSET_SBTYPE_CD,(CASE WHEN PA.PRTY_ASSET_SBTYPE_CD = ''REALDW'' THEN 1 ELSE 0 END) AS DWELL_IND, 
+
+(CASE WHEN PA.PRTY_ASSET_SBTYPE_CD IN (''REALDW'', ''PP'', ''REALSP'') THEN 1 ELSE 0 END) AS PROP_IND
+
+  FROM DB_T_PROD_CORE.PRTY_ASSET PA JOIN DB_T_PROD_CORE.AGMT_ASSET AA ON PA.PRTY_ASSET_ID=AA.PRTY_ASSET_ID 
+
+  ) PAS 
+
+ GROUP BY PAS.AGMT_ID,PRTY_ASSET_SBTYPE_CD,PAS.asset_host_id_val
+
+ ) PA ON PA.AGMT_ID=AGT.AGMT_ID 
+
+  
+
+    
+
+LEFT OUTER JOIN (SELECT max(AGMT_STS_STRT_DTTM) as CAN_DTTM,  AGMT_STS_RSN_CD as CAN_RSN_CD, 
+
+      AGMT_STS_SRC_TYPE_CD as CAN_SRC, agmt.HOST_AGMT_NUM as HOST_AGMT_NUM,AGMT.AGMT_ID 
+
+      FROM DB_T_PROD_CORE.AGMT_STS AGMT_STS 
+
+    join DB_T_PROD_CORE.AGMT AGMT on agmt_sts.agmt_id = agmt.agmt_id   
+
+    and AGMT_STS_CD = ''CNCLD''
+AND TRY_TO_DATE( cast(AGMT_STS_STRT_DTTM as string), ''MM/DD/YYYY'') BETWEEN TRY_TO_DATE(:MCAS_Start_dt, ''MM/DD/YYYY'')
+AND TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'') 
+
+     group by AGMT.AGMT_ID,CAN_RSN_CD,CAN_SRC,HOST_AGMT_NUM
+
+     ) can_dt   on agt.agmt_id=can_dt.agmt_id 
+
+     
+
+QUALIFY ROW_NUMBER() OVER(PARTITION BY AGT.HOST_AGMT_NUM 
+
+ORDER   BY  MODL_CRTN_DTTM DESC ) = 1
+
+    )OVERALL
+
+),
+
+MCAS_HOME_DETAIL_CANCEL AS (
+
+        SELECT DISTINCT COMPANY, --DB_T_SHRD_PROD.
+        STATE,LOB_TYPE,PLCY_TYPE,HOST_AGMT_NUM,AGMT_OPN_DTTM,AGMT_PLND_EXPN_DTTM,AGMT_EFF_DTTM,NEW_AGMT_EFF_DTTM,
+
+        DWELL_IND,PROP_IND,AGMT_CUR_STS_CD,AGMT_CUR_STS_RSN_CD,CAN_DTTM,CAN_RSN,CAN_SRC,NON_RENEWAL_DTTM ,NON_RENEWAL_STS,
+
+        REWRT_DTTM,RNST_DTTM, --DB_T_PROD_COMN.
+        PREMIUM,MODL_NUM,TERM_NUM,AGMT_ID,MODL_CRTN_DTTM,
+
+        AGMT_STS_STRT_DTTM,AGMT_STS_CD,AGMT_STS_SRC_TYPE_CD,QUOTN_STS_TYPE_CD,''C'' AS IND
+
+        FROM (
+
+        SELECT DISTINCT AGT.*, CMP.COMPANY,RSKSTATE.GEOGRCL_AREA_SHRT_NAME AS STATE,REWRT.REWRT_DTTM,RNST.RNST_DTTM,
+
+        cast(0 as decimal(18,2)) AS PREMIUM,LOB.LOB_TYPE,PA.DWELL_IND,PA.PROP_IND,PA.PRTY_ASSET_SBTYPE_CD,CAN_DT.CAN_RSN,
+
+can_dt.can_dttm,can_dt.CAN_SRC,LOB.PROD_NAME as PLCY_TYPE,NON_DTTM.NON_RENEWAL_DTTM,NON_DTTM.NON_RENEWAL_STS/* REASON.EV_STS_RSN_CD  */
+          FROM (
+
+        SELECT PPV.AGMT_ID
+
+         ,PPV.HOST_AGMT_NUM
+
+         ,PPV.AGMT_OPN_DTTM
+
+         ,PPV.AGMT_EFF_DTTM
+
+         ,PPV.AGMT_PLND_EXPN_DTTM
+
+         ,PPV.TERM_NUM,PPV.MODL_NUM
+
+         ,PPV.LGCY_PLCY_IND,PPV.AGMT_CUR_STS_CD
+
+         ,PPV.AGMT_CUR_STS_RSN_CD,PPV.NEW_AGMT_EFF_DTTM,PPV.MODL_CRTN_DTTM
+
+         ,IQ.QUOTN_STS_TYPE_CD,AP.APLCTN_TYPE_CD
+
+         ,PPV.AGMT_PRCSG_DTTM,A_S.AGMT_STS_STRT_DTTM,A_S.AGMT_STS_CD,A_S.AGMT_STS_SRC_TYPE_CD FROM (
+
+        SELECT DISTINCT
+
+          A.AGMT_ID
+
+         ,A.HOST_AGMT_NUM
+
+         ,A.AGMT_OPN_DTTM
+
+         ,A.AGMT_EFF_DTTM
+
+         ,A.AGMT_PLND_EXPN_DTTM
+
+         ,A.TERM_NUM,A.MODL_NUM
+
+         ,A.LGCY_PLCY_IND,A.AGMT_PRCSG_DTTM,A.MODL_CRTN_DTTM,
+
+         A.AGMT_CUR_STS_CD,A.AGMT_CUR_STS_RSN_CD,
+
+         CASE    WHEN A.MODL_EFF_DTTM > A.MODL_CRTN_DTTM THEN A.MODL_EFF_DTTM 
+
+        ELSE    A.MODL_CRTN_DTTM 
+
+        END     AS NEW_AGMT_EFF_DTTM
+
+         FROM DB_T_PROD_CORE.AGMT A
+
+         INNER JOIN DB_T_PROD_CORE.AGMT_PROD AP ON A.AGMT_ID=AP.AGMT_ID AND AP.AGMT_PROD_ROLE_CD=''PLCYTYPE''
+
+         INNER JOIN DB_T_PROD_CORE.PROD P ON AP.PROD_ID=P.PROD_ID AND P.INSRNC_TYPE_CD=''PROPTY''
+
+         WHERE A.AGMT_TYPE_CD = ''PPV''
+
+         AND     A.TRANS_STRT_DTTM = 
+
+        (
+
+        SELECT  MIN(T2.TRANS_STRT_DTTM) 
+
+        FROM    DB_T_PROD_CORE.AGMT T2 
+
+        WHERE   A.AGMT_ID = T2.AGMT_ID)             
+
+        ) PPV
+
+        LEFT JOIN 
+
+        (
+
+        SELECT  HOST_AGMT_NUM, TERM_NUM,AGMT_ID,AGMT_TYPE_CD 
+
+        FROM    DB_T_PROD_CORE.AGMT AGMT
+
+        WHERE   AGMT_TYPE_CD = ''POLTRM'' 
+
+AND TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'') BETWEEN TRY_TO_DATE( cast(AGMT_EFF_DTTM as string), ''MM/DD/YYYY'')
+AND TRY_TO_DATE( cast(AGMT_PLND_EXPN_DTTM as string), ''MM/DD/YYYY'')
+
+        GROUP   BY 1,2,3,4) TRM 
+
+                ON      PPV.HOST_AGMT_NUM = TRM.HOST_AGMT_NUM 
+
+                AND     PPV.TERM_NUM = TRM.TERM_NUM  
+
+        INNER JOIN 
+
+        DB_T_PROD_CORE.AGMT_STS A_S 
+
+                ON      PPV.AGMT_ID = A_S.AGMT_ID  
+
+/* -EIM-50556 */
+AND TRY_TO_DATE( cast(A_S.AGMT_STS_STRT_DTTM as string), ''MM/DD/YYYY'') BETWEEN TRY_TO_DATE(:MCAS_Start_dt, ''MM/DD/YYYY'')
+AND TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'')
+
+                AND     A_S.AGMT_STS_CD <> ''CNFRMDDT'' 
+
+        
+
+        LEFT OUTER JOIN DB_T_PROD_CORE.AGMT_ASSET AA ON AA.AGMT_ID = PPV.AGMT_ID  
+
+        LEFT  OUTER JOIN DB_T_PROD_CORE.APLCTN AP ON AP.HOST_APLCTN_NUM=PPV.HOST_AGMT_NUM
+
+        LEFT OUTER JOIN DB_T_PROD_CORE.INSRNC_QUOTN IQ ON AP.APLCTN_ID = IQ.APLCTN_ID
+
+        
+
+        QUALIFY ROW_NUMBER() OVER(PARTITION BY PPV.AGMT_ID 
+
+        ORDER   BY A_S.AGMT_STS_STRT_DTTM DESC) = 1 
+
+        )  AGT  
+
+        
+
+/* COMPANY  */
+        inner JOIN  (
+
+        SELECT DISTINCT 
+
+           PA.AGMT_ID
+
+           ,INTRNL_ORG_NUM COMPANY
+
+           ,PRTY_AGMT_ROLE_CD
+
+           FROM DB_T_PROD_CORE.PRTY_AGMT PA
+
+           LEFT JOIN DB_T_PROD_CORE.INTRNL_ORG IO ON PA.PRTY_ID = IO.INTRNL_ORG_PRTY_ID
+
+           WHERE PA.PRTY_AGMT_ROLE_CD = ''CMP''
+
+           AND CAST(IO.EDW_END_DTTM AS DATE) = ''9999-12-31''
+
+           AND INTRNL_ORG_SBTYPE_CD = ''CO''
+
+           AND CAST(PA.EDW_END_DTTM AS DATE) = ''9999-12-31''
+
+        ) CMP ON AGT.AGMT_ID = CMP.AGMT_ID
+
+        
+
+/* RISK DB_T_SHRD_PROD.STATE  */
+        inner JOIN 
+
+        (
+
+        SELECT  A.AGMT_ID, C.GEOGRCL_AREA_SHRT_NAME 
+
+        FROM    
+
+         ( 
+
+        SELECT DISTINCT AGMT_ID,LOC_ID, AGMT_LOCTR_ROLE_TYPE_CD
+
+        FROM    DB_T_PROD_CORE.AGMT_LOCTR 
+
+        WHERE   CAST(EDW_END_DTTM AS DATE) = ''9999-12-31'')  A 
+
+        INNER JOIN DB_T_PROD_CORE.LOCTR B 
+
+            ON  (A.LOC_ID = B.LOCTR_ID 
+
+            AND B.GEOGRCL_AREA_SBTYPE_CD = ''TER'')
+
+        INNER JOIN DB_T_PROD_CORE.TERR C 
+
+            ON  A.LOC_ID = C.TERR_ID 
+
+            AND CAST(C.EDW_END_DTTM AS DATE) = ''9999-12-31''
+
+        WHERE   A.AGMT_LOCTR_ROLE_TYPE_CD = ''AGTWINST''    
+
+        ) RSKSTATE  
+
+            ON  AGT.AGMT_ID = RSKSTATE.AGMT_ID
+
+            
+
+        LEFT JOIN ( 
+
+            SELECT  HOST_AGMT_NUM ,AG.MODL_EFF_DTTM AS REWRT_DTTM
+
+        FROM DB_T_PROD_CORE.AGMT AG
+
+        JOIN DB_T_PROD_CORE.EV_STS ES ON ES.AGMT_ID = AG.AGMT_ID         
+
+        JOIN DB_T_PROD_CORE.EV EVV ON EVV.EV_ID =ES.EV_ID 
+
+        AND EV_ACTVY_TYPE_CD=''REWRT''
+
+     WHERE
+  TRY_TO_DATE( cast(AG.MODL_EFF_DTTM as string), ''MM/DD/YYYY'') BETWEEN TRY_TO_DATE(:MCAS_Start_dt, ''MM/DD/YYYY'')
+  AND TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'')
+
+        AND MODL_CRTN_DTTM --(DATE) 
+        is not null
+
+            ) REWRT 
+
+            on  agt.HOST_AGMT_NUM=REWRT.HOST_AGMT_NUM  
+
+        
+
+        LEFT JOIN ( 
+
+                SELECT  HOST_AGMT_NUM ,AG.MODL_EFF_DTTM AS RNST_DTTM
+
+        FROM DB_T_PROD_CORE.AGMT AG
+
+        JOIN DB_T_PROD_CORE.EV_STS ES ON ES.AGMT_ID = AG.AGMT_ID         
+
+        JOIN DB_T_PROD_CORE.EV EVV ON EVV.EV_ID =ES.EV_ID 
+
+        AND EV_ACTVY_TYPE_CD=''REINSTATE''
+
+WHERE
+  TRY_TO_DATE( cast(AG.MODL_EFF_DTTM as string), ''MM/DD/YYYY'') BETWEEN TRY_TO_DATE(:MCAS_Start_dt, ''MM/DD/YYYY'')
+  AND TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'')
+
+        AND MODL_CRTN_DTTM --(DATE) 
+        is not null
+
+        ) RNST 
+
+            on  agt.HOST_AGMT_NUM=RNST.HOST_AGMT_NUM 
+
+        
+
+   
+
+        
+
+/* LOB */
+        INNER JOIN 
+
+        (
+
+        SELECT  B.AGMT_ID, decode(C.INSRNC_LOB_TYPE_CD,''HO'',''H'',''MH'',''T'',''SF'',''SF'') as LOB_TYPE,C.PROD_NAME 
+
+        FROM    
+
+           ( 
+
+        SELECT  DISTINCT PROD_ID,AGMT_ID
+
+        FROM    DB_T_PROD_CORE.AGMT_PROD 
+
+        WHERE   CAST(EDW_END_DTTM AS DATE)=''9999-12-31'') B 
+
+        INNER JOIN DB_T_PROD_CORE.PROD C 
+
+            ON  B.PROD_ID = C.PROD_ID 
+
+            and C.INSRNC_TYPE_CD=''PROPTY''
+
+            AND CAST(C.EDW_END_DTTM AS DATE)=''9999-12-31''
+
+        ) LOB 
+
+            ON  agt.AGMT_ID = LOB.AGMT_ID 
+
+            
+
+            
+
+/*  Non Renewal date and Non Renewal Status */
+        
+
+        LEFT JOIN 
+
+        (
+
+/* -EIM-50556 */
+        SELECT DISTINCT AG.AGMT_ID,AG.HOST_AGMT_NUM as HOST_AGMT_NUM,QUOTN_STS_TYPE_CD as NON_RENEWAL_STS,
+
+        IQ.QUOTN_PLND_AGMT_OPN_DTTM as NON_RENEWAL_DTTM
+
+        FROM DB_T_PROD_CORE.INSRNC_QUOTN IQ
+
+        JOIN DB_T_PROD_CORE.APLCTN AP ON AP.APLCTN_ID = IQ.APLCTN_ID
+
+        JOIN DB_T_PROD_CORE.AGMT AG on AP.HOST_APLCTN_NUM = AG.HOST_AGMT_NUM
+
+		AND IQ.QUOTN_PLND_AGMT_OPN_DTTM>AG.AGMT_EFF_DTTM AND QUOTN_STS_TYPE_CD = ''NONRNWD''
+
+        WHERE iq.trans_end_Dttm =''9999-12-31 23:59:59.999999'' 
+
+AND TRY_TO_DATE( cast(QUOTN_PLND_AGMT_OPN_DTTM as string), ''MM/DD/YYYY'') BETWEEN TRY_TO_DATE(:MCAS_Start_dt, ''MM/DD/YYYY'')
+AND TRY_TO_DATE(:MCAS_End_dt, ''MM/DD/YYYY'')
+
+      
+
+        )NON_DTTM
+
+        ON NON_DTTM.HOST_AGMT_NUM=AGT.HOST_AGMT_NUM and AGT.AGMT_ID =NON_DTTM.AGMT_ID
+
+        
+
+/* INDICATOR */
+        LEFT JOIN 
+
+        (
+
+        SELECT PAS.AGMT_ID, PRTY_ASSET_SBTYPE_CD,MAX(PAS.DWELL_IND) DWELL_IND, MAX(PAS.PROP_IND) PROP_IND
+
+        FROM  ( SELECT AA.AGMT_ID, PA.ASSET_HOST_ID_VAL, PA.PRTY_ASSET_SBTYPE_CD,(CASE WHEN PA.PRTY_ASSET_SBTYPE_CD = ''REALDW'' THEN 1 ELSE 0 END) AS DWELL_IND, 
+
+        (CASE WHEN PA.PRTY_ASSET_SBTYPE_CD IN (''REALDW'', ''PP'', ''REALSP'') THEN 1 ELSE 0 END) AS PROP_IND
+
+         FROM DB_T_PROD_CORE.PRTY_ASSET PA JOIN DB_T_PROD_CORE.AGMT_ASSET AA ON PA.PRTY_ASSET_ID=AA.PRTY_ASSET_ID 
+
+           ) PAS 
+
+         GROUP BY PAS.AGMT_ID,PRTY_ASSET_SBTYPE_CD
+
+         ) PA ON PA.AGMT_ID=AGT.AGMT_ID 
+
+          
+
+            
+
+        LEFT OUTER JOIN (SELECT max(AGMT_STS_STRT_DTTM) as CAN_DTTM,  
+
+              AGMT_STS_SRC_TYPE_CD as CAN_SRC, AGMT_STS_RSN_CD AS CAN_RSN, 
+
+              agmt.HOST_AGMT_NUM as HOST_AGMT_NUM,AGMT.AGMT_ID 
+
+            FROM DB_T_PROD_CORE.AGMT_STS AGMT_STS 
+
+            join DB_T_PROD_CORE.AGMT AGMT on agmt_sts.agmt_id = agmt.agmt_id    
+
+            and AGMT_STS_CD = ''CNCLD''
+
+            group by AGMT.AGMT_ID,CAN_SRC,HOST_AGMT_NUM,CAN_RSN
+
+             ) can_dt   on agt.agmt_id=can_dt.agmt_id 
+
+            
+
+             )OVERALL
+
+    )
+
+	,					
+
+    					
+
+MCAS_AUTO_DETAIL_DWP AS 					
+
+(	
+
+SELECT DISTINCT COMPANY,                                                					
+
+    --DB_T_SHRD_PROD.
+    STATE,CAST(NULL AS VARCHAR(50)) AS LOB_TYPE, CAST(PROD_NAME AS VARCHAR(50))  PLCY_TYPE,     
+
+	PLCY_NUM, 
+
+    CAST(''1900-01-01 00:01:00.000000'' as timestamp(6)) as AGMT_OPN_DTTM,
+
+	CAST(''1900-01-01 00:01:00.000000'' as timestamp(6)) as AGMT_PLND_EXPN_DTTM,	
+
+    CAST(''1900-01-01 00:01:00.000000'' as timestamp(6)) as AGMT_EFF_DTTM,					
+
+    CAST(''1900-01-01 00:01:00.000000'' as timestamp(6)) as NEW_AGMT_EFF_DTTM,    
+
+	 CAST(NULL as integer) as DWELL_IND,   CAST(NULL as integer) as PROP_IND, 
+
+	    CAST(NULL as varchar(50))as AGMT_CUR_STS_CD, 
+
+		   CAST(NULL as varchar(50))as AGMT_CUR_STS_RSN_CD, 
+
+    CAST(''1900-01-01 00:01:00.000000'' as timestamp(6))as CAN_DTTM,					
+
+    CAST(NULL as varchar(50)) as CAN_RSN_CD,CAST(NULL as varchar(50)) as CAN_SRC,                                               					
+
+    CAST(''1900-01-01 00:01:00.000000'' as timestamp(6))as NON_RENEWAL_DTTM,
+
+	CAST(NULL as varchar(50))as NON_RENEWAL_STS, 
+
+	CAST(''1900-01-01 00:01:00.000000'' as timestamp(6))as REWRT_DTTM,					
+
+    CAST(''1900-01-01 00:01:00.000000'' as timestamp(6))as RNST_DTTM,
+
+	 --DB_T_PROD_COMN.
+     PREMIUM, 
+
+             CAST(NULL AS INTEGER) AS MODL_NUM,					
+
+    CAST(NULL AS INTEGER) AS TERM_NUM,					
+
+    CAST(NULL AS INTEGER) AS AGMT_ID,                                     					
+
+    CAST(''1900-01-01 00:01:00.000000'' as timestamp(6))as MODL_CRTN_DTTM,                                                					
+
+     CAST(''1900-01-01 00:01:00.000000'' as timestamp(6))as AGMT_STS_STRT_DTTM,    
+
+	  CAST(NULL AS VARCHAR(50)) AS AGMT_STS_CD,                                               					
+
+    CAST(NULL AS VARCHAR(50)) AS AGMT_STS_SRC_TYPE_CD,                                              					
+
+    CAST(NULL AS VARCHAR(50)) AS QUOTN_STS_TYPE_CD,
+
+    CAST(''DWP'' AS VARCHAR(10)) AS IND                                               					
+
+    FROM (                                                  					
+
+SELECT COALESCE(RISK_STATE_CD,RSKSTATE.GEOGRCL_AREA_SHRT_NAME) AS STATE,					
+
+COALESCE(CASE WHEN MSTR_CO_NUM=''10'' THEN ''AMI''					
+
+WHEN MSTR_CO_NUM=''40'' THEN ''AIC''					
+
+WHEN MSTR_CO_NUM=''50'' THEN ''AGI''					
+
+WHEN MSTR_CO_NUM=''70'' THEN ''AMG'' 					
+
+WHEN MSTR_CO_NUM=''60'' THEN ''AMF'' 					
+
+END,COMPANY) AS COMPANY,					
+
+PLCY_NUM,	PROD_NAME,				
+
+SUM(GW_PREM_TRANS_GL_INFO.TRANS_PREM_AMT) AS PREMIUM					
+
+FROM DB_T_PROD_COMN.GW_PREM_TRANS_GL_INFO GW_PREM_TRANS_GL_INFO                                                					
+
+INNER JOIN (SELECT DISTINCT PLCY_INFO_ID,PLCY_NUM, PLCY_TERM_NUM,PLCY_MODL_NUM FROM DB_T_PROD_COMN.GW_PREM_TRANS_PLCY_INFO) GW_PREM_TRANS_PLCY_INFO                                              					
+
+ON GW_PREM_TRANS_PLCY_INFO.PLCY_INFO_ID=GW_PREM_TRANS_GL_INFO.PLCY_INFO_ID					
+
+INNER JOIN DB_T_PROD_CORE.AGMT A on GW_PREM_TRANS_PLCY_INFO.PLCY_NUM=A.HOST_AGMT_NUM 					
+
+AND A.TERM_NUM=CAST(GW_PREM_TRANS_PLCY_INFO.PLCY_TERM_NUM AS INTEGER)					
+
+AND A.MODL_NUM=CAST(GW_PREM_TRANS_PLCY_INFO.PLCY_MODL_NUM AS INTEGER)					
+
+AND A.AGMT_TYPE_CD = ''PPV''                                                      					
+
+AND A.SRC_SYS_CD = ''GWPC''and A.EDW_END_DTTM =''9999-12-31 23:59:59.999999''					
+
+INNER JOIN DB_T_PROD_CORE.AGMT_PROD AP ON A.AGMT_ID=AP.AGMT_ID AND AP.AGMT_PROD_ROLE_CD=''PLCYTYPE''                                                    					
+
+INNER JOIN DB_T_PROD_CORE.PROD P ON AP.PROD_ID=P.PROD_ID AND INSRNC_LOB_TYPE_CD in (''HO'',''MH'')/* AND PROD_NAME IN (''PPV'',''PPV2'') 					 */
+/* COMPANY                                                       					 */
+LEFT JOIN  (                                                    					
+
+SELECT DISTINCT                                                         					
+
+   PA.AGMT_ID                                                       					
+
+   ,INTRNL_ORG_NUM COMPANY                                                      					
+
+   ,PRTY_AGMT_ROLE_CD                                                       					
+
+   FROM DB_T_PROD_CORE.PRTY_AGMT PA                                                      					
+
+   LEFT JOIN --EVIEWDB_EDW. 
+   DB_T_PROD_CORE.INTRNL_ORG IO ON PA.PRTY_ID = IO.INTRNL_ORG_PRTY_ID                                                     					
+
+   WHERE PA.PRTY_AGMT_ROLE_CD = ''CMP''                                                       					
+
+   AND CAST(IO.EDW_END_DTTM AS DATE) = ''9999-12-31''                                                     					
+
+   AND INTRNL_ORG_SBTYPE_CD = ''CO''                                                      					
+
+   AND CAST(PA.EDW_END_DTTM AS DATE) = ''9999-12-31''                                                     					
+
+) CMP ON A.AGMT_ID = CMP.AGMT_ID                                                    					
+
+                                                        					
+
+/* RISK DB_T_SHRD_PROD.STATE                                                        					 */
+LEFT JOIN                                                   					
+
+(                                                       					
+
+SELECT  A.AGMT_ID, C.GEOGRCL_AREA_SHRT_NAME /* AS RISKSTATE                                                      					 */
+FROM                                                            					
+
+ (                                                      					
+
+SELECT DISTINCT AGMT_ID,LOC_ID, AGMT_LOCTR_ROLE_TYPE_CD                                                     					
+
+FROM    DB_T_PROD_CORE.AGMT_LOCTR                                                        					
+
+WHERE   CAST(EDW_END_DTTM AS DATE) = ''9999-12-31''					
+
+)  A                                                    					
+
+INNER JOIN DB_T_PROD_CORE.LOCTR B                                                        					
+
+    ON  (A.LOC_ID = B.LOCTR_ID                                                      					
+
+    AND B.GEOGRCL_AREA_SBTYPE_CD = ''TER'')                                                       					
+
+INNER JOIN DB_T_PROD_CORE.TERR C                                                         					
+
+    ON  A.LOC_ID = C.TERR_ID                                                        					
+
+    AND CAST(C.EDW_END_DTTM AS DATE) = ''9999-12-31''                                                     					
+
+WHERE   A.AGMT_LOCTR_ROLE_TYPE_CD = ''AGTWINST''                                                          					
+
+) RSKSTATE                                                          					
+
+    ON  A.AGMT_ID = RSKSTATE.AGMT_ID      					
+
+WHERE    					
+
+GW_PREM_TRANS_GL_INFO.TRANS_PREM_AMT <> 0.00                                                					
+
+and GW_PREM_TRANS_GL_INFO.BUS_ACT_TRNS_ACT in (''WRT'', ''NEF'') 					
+
+and GL_EXTC_YR between substr (:MCAS_Start_dt,7,4) and substr(:MCAS_End_dt,7,4)                                               					
+
+and GL_EXTC_MTH between substr(:MCAS_Start_dt,1,2) and substr(:MCAS_End_dt,1,2)					
+
+AND PLCY_NUM IS NOT NULL 					
+
+GROUP BY 1,2,3	,4				
+
+)OVERALL					
+
+)
+
+
+
+SELECT * FROM MCAS_HOME_DETAIL_INFORCE
+
+UNION ALL
+
+SELECT * FROM MCAS_HOME_DETAIL_CANCEL
+
+UNION					
+
+SELECT * FROM MCAS_AUTO_DETAIL_DWP
+) SRC
+)
+);
+
+
+-- Component Exp_Src, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE Exp_Src AS
+(
+SELECT
+SQ_AGMT.UNDRWRTG_CMPY as UNDRWRTG_CMPY,
+SQ_AGMT.RISK_STATE as RISK_STATE,
+SQ_AGMT.LOB as LOB,
+SQ_AGMT.PLCY_TYPE as PLCY_TYPE,
+SQ_AGMT.HOST_AGMT_NUM as HOST_AGMT_NUM,
+SQ_AGMT.AGMT_OPN_DTTM as AGMT_OPN_DTTM,
+SQ_AGMT.AGMT_PLND_EXPN_DTTM as AGMT_PLND_EXPN_DTTM,
+SQ_AGMT.AGMT_EFF_DTTM as AGMT_EFF_DTTM,
+SQ_AGMT.NEW_AGMT_EFF_DTTM as NEW_AGMT_EFF_DTTM,
+SQ_AGMT.DWELL_IND as DWELL_IND,
+SQ_AGMT.PROP_IND as PROP_IND,
+SQ_AGMT.AGMT_CUR_STS_CD as AGMT_CUR_STS_CD,
+SQ_AGMT.AGMT_CUR_STS_RSN_CD as AGMT_CUR_STS_RSN_CD,
+SQ_AGMT.CAN_DTTM as CAN_DTTM,
+SQ_AGMT.CAN_RSN_CD as CAN_RSN_CD,
+SQ_AGMT.CAN_SRC as CAN_SRC,
+SQ_AGMT.NON_RENEWAL_DTTM as NON_RENEWAL_DTTM,
+SQ_AGMT.NON_RENEWAL_STS as NON_RENEWAL_STS,
+SQ_AGMT.REWRT_DTTM as REWRT_DTTM,
+SQ_AGMT.RNST_DTTM as RNST_DTTM,
+SQ_AGMT.TR_PREM_AMT as TR_PREM_AMT,
+SQ_AGMT.MODL_NUM as MODL_NUM,
+SQ_AGMT.TERM_NUM as TERM_NUM,
+SQ_AGMT.AGMT_ID as AGMT_ID,
+SQ_AGMT.MODL_CRTN_DTTM as MODL_CRTN_DTTM,
+SQ_AGMT.AGMT_STS_STRT_DTTM as AGMT_STS_STRT_DTTM,
+SQ_AGMT.AGMT_STS_CD as AGMT_STS_CD,
+SQ_AGMT.AGMT_STS_SRC_TYPE_CD as AGMT_STS_SRC_TYPE_CD,
+SQ_AGMT.QUOTN_STS_TYPE_CD as QUOTN_STS_TYPE_CD,
+SQ_AGMT.IND as IND,
+SQ_AGMT.source_record_id
+FROM
+SQ_AGMT
+);
+
+
+-- Component MCAS_HOME_DETAIL, Type TARGET 
+INSERT INTO DB_T_PROD_COMN.MCAS_HOME_DETAIL
+(
+UNDRWRTG_CMPY,
+RISK_STATE,
+LOB,
+PLCY_TYPE,
+HOST_AGMT_NUM,
+AGMT_OPN_DTTM,
+AGMT_PLND_EXPN_DTTM,
+AGMT_EFF_DTTM,
+NEW_AGMT_EFF_DTTM,
+DWELL_IND,
+PROP_IND,
+AGMT_CUR_STS_CD,
+AGMT_CUR_STS_RSN_CD,
+CAN_DTTM,
+CAN_RSN_CD,
+CAN_SRC,
+NON_RENEWAL_DTTM,
+NON_RENEWAL_STS,
+REWRT_DTTM,
+RNST_DTTM,
+TR_PREM_AMT,
+MODL_NUM,
+TERM_NUM,
+AGMT_ID,
+MODL_CRTN_DTTM,
+AGMT_STS_STRT_DTTM,
+AGMT_STS_CD,
+AGMT_STS_SRC_TYPE_CD,
+QUOTN_STS_TYPE_CD,
+IND
+)
+SELECT
+Exp_Src.UNDRWRTG_CMPY as UNDRWRTG_CMPY,
+Exp_Src.RISK_STATE as RISK_STATE,
+Exp_Src.LOB as LOB,
+Exp_Src.PLCY_TYPE as PLCY_TYPE,
+Exp_Src.HOST_AGMT_NUM as HOST_AGMT_NUM,
+Exp_Src.AGMT_OPN_DTTM as AGMT_OPN_DTTM,
+Exp_Src.AGMT_PLND_EXPN_DTTM as AGMT_PLND_EXPN_DTTM,
+Exp_Src.AGMT_EFF_DTTM as AGMT_EFF_DTTM,
+Exp_Src.NEW_AGMT_EFF_DTTM as NEW_AGMT_EFF_DTTM,
+Exp_Src.DWELL_IND as DWELL_IND,
+Exp_Src.PROP_IND as PROP_IND,
+Exp_Src.AGMT_CUR_STS_CD as AGMT_CUR_STS_CD,
+Exp_Src.AGMT_CUR_STS_RSN_CD as AGMT_CUR_STS_RSN_CD,
+Exp_Src.CAN_DTTM as CAN_DTTM,
+Exp_Src.CAN_RSN_CD as CAN_RSN_CD,
+Exp_Src.CAN_SRC as CAN_SRC,
+Exp_Src.NON_RENEWAL_DTTM as NON_RENEWAL_DTTM,
+Exp_Src.NON_RENEWAL_STS as NON_RENEWAL_STS,
+Exp_Src.REWRT_DTTM as REWRT_DTTM,
+Exp_Src.RNST_DTTM as RNST_DTTM,
+Exp_Src.TR_PREM_AMT as TR_PREM_AMT,
+Exp_Src.MODL_NUM as MODL_NUM,
+Exp_Src.TERM_NUM as TERM_NUM,
+Exp_Src.AGMT_ID as AGMT_ID,
+Exp_Src.MODL_CRTN_DTTM as MODL_CRTN_DTTM,
+Exp_Src.AGMT_STS_STRT_DTTM as AGMT_STS_STRT_DTTM,
+Exp_Src.AGMT_STS_CD as AGMT_STS_CD,
+Exp_Src.AGMT_STS_SRC_TYPE_CD as AGMT_STS_SRC_TYPE_CD,
+Exp_Src.QUOTN_STS_TYPE_CD as QUOTN_STS_TYPE_CD,
+Exp_Src.IND as IND
+FROM
+Exp_Src;
+
+
+END; ';

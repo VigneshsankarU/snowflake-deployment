@@ -1,0 +1,195 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_BASE_PERSIS_DTL("WORKLET_NAME" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' DECLARE
+  PRCS_ID STRING;
+  run_id STRING;
+  workflow_name STRING;
+  session_name STRING;
+BEGIN
+  run_id := public.func_get_scoped_param(:run_id, ''run_id'', :workflow_name, :worklet_name, :session_name);
+  workflow_name := public.func_get_scoped_param(:run_id, ''workflow_name'', :workflow_name, :worklet_name, :session_name);
+  session_name := public.func_get_scoped_param(:run_id, ''session_name'', :workflow_name, :worklet_name, :session_name);
+
+  PRCS_ID := public.func_get_scoped_param(:run_id, ''prcs_id'', :workflow_name, :worklet_name, :session_name);
+ 
+
+-- Component SQ_PERSIS_DTL, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_PERSIS_DTL AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as PS_RPT_TYPE,
+$2 as PS_TRANS,
+$3 as PS_REG,
+$4 as PS_DIST,
+$5 as PS_AGT,
+$6 as PS_POLICY,
+$7 as PS_AGT_PRIM,
+$8 as PS_STAT,
+$9 as PS_VAL,
+$10 as PS_ACTIVE,
+$11 as PS_TYPE,
+$12 as PS_NAME,
+$13 as PS_PLAN,
+$14 as PS_ISS_DT,
+$15 as PS_XPRY_DT,
+$16 as PS_AGT_SHR,
+$17 as PS_TARGET,
+$18 as PS_RATIO,
+$19 as PS_ANLZD_PREM,
+$20 as PS_INF_PREM,
+$21 as PS_START_DATE,
+$22 as PS_END_DATE,
+$23 as PS_TIMEFRAME,
+$24 as PS_TIMEFRAME_PC,
+$25 as PS_TYPE_RUN,
+$26 as PS_PROC_DATE,
+$27 as PS_VOLUME,
+$28 as PS_ASSOCAGT,
+$29 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT
+PERSIS_DTL.PS_RPT_TYPE,
+PERSIS_DTL.PS_TRANS,
+PERSIS_DTL.PS_REG,
+PERSIS_DTL.PS_DIST,
+PERSIS_DTL.PS_AGT,
+PERSIS_DTL.PS_POLICY,
+PERSIS_DTL.PS_AGT_PRIM,
+PERSIS_DTL.PS_STAT,
+PERSIS_DTL.PS_VAL,
+PERSIS_DTL.PS_ACTIVE,
+PERSIS_DTL.PS_TYPE,
+PERSIS_DTL.PS_NAME,
+PERSIS_DTL.PS_PLAN,
+PERSIS_DTL.PS_ISS_DT,
+PERSIS_DTL.PS_XPRY_DT,
+PERSIS_DTL.PS_AGT_SHR,
+PERSIS_DTL.PS_TARGET,
+PERSIS_DTL.PS_RATIO,
+PERSIS_DTL.PS_ANLZD_PREM,
+PERSIS_DTL.PS_INF_PREM,
+PERSIS_DTL.PS_START_DATE,
+PERSIS_DTL.PS_END_DATE,
+PERSIS_DTL.PS_TIMEFRAME,
+PERSIS_DTL.PS_TIMEFRAME_PC,
+PERSIS_DTL.PS_TYPE_RUN,
+PERSIS_DTL.PS_PROC_DATE,
+PERSIS_DTL.PS_VOLUME,
+PERSIS_DTL.PS_ASSOCAGT
+FROM db_t_prod_stag.PERSIS_DTL
+) SRC
+)
+);
+
+
+-- Component exp_pass_through, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_through AS
+(
+SELECT
+SQ_PERSIS_DTL.PS_RPT_TYPE as PS_RPT_TYPE,
+SQ_PERSIS_DTL.PS_TRANS as PS_TRANS,
+SQ_PERSIS_DTL.PS_REG as PS_REG,
+SQ_PERSIS_DTL.PS_DIST as PS_DIST,
+SQ_PERSIS_DTL.PS_AGT as PS_AGT,
+SQ_PERSIS_DTL.PS_POLICY as PS_POLICY,
+SQ_PERSIS_DTL.PS_AGT_PRIM as PS_AGT_PRIM,
+SQ_PERSIS_DTL.PS_STAT as PS_STAT,
+SQ_PERSIS_DTL.PS_VAL as PS_VAL,
+SQ_PERSIS_DTL.PS_ACTIVE as PS_ACTIVE,
+SQ_PERSIS_DTL.PS_TYPE as PS_TYPE,
+SQ_PERSIS_DTL.PS_NAME as PS_NAME,
+SQ_PERSIS_DTL.PS_PLAN as PS_PLAN,
+SQ_PERSIS_DTL.PS_ISS_DT as PS_ISS_DT,
+SQ_PERSIS_DTL.PS_XPRY_DT as PS_XPRY_DT,
+SQ_PERSIS_DTL.PS_AGT_SHR as PS_AGT_SHR,
+SQ_PERSIS_DTL.PS_TARGET as PS_TARGET,
+SQ_PERSIS_DTL.PS_RATIO as PS_RATIO,
+SQ_PERSIS_DTL.PS_ANLZD_PREM as PS_ANLZD_PREM,
+SQ_PERSIS_DTL.PS_INF_PREM as PS_INF_PREM,
+SQ_PERSIS_DTL.PS_START_DATE as PS_START_DATE,
+SQ_PERSIS_DTL.PS_END_DATE as PS_END_DATE,
+SQ_PERSIS_DTL.PS_TIMEFRAME as PS_TIMEFRAME,
+SQ_PERSIS_DTL.PS_TIMEFRAME_PC as PS_TIMEFRAME_PC,
+SQ_PERSIS_DTL.PS_TYPE_RUN as PS_TYPE_RUN,
+TO_DATE ( TO_CHAR ( SQ_PERSIS_DTL.PS_PROC_DATE ) , ''YYYYMMDD'' ) as o_PS_PROC_DATE,
+SQ_PERSIS_DTL.PS_VOLUME as PS_VOLUME,
+SQ_PERSIS_DTL.PS_ASSOCAGT as PS_ASSOCAGT,
+:PRCS_ID as PRCS_ID,
+SQ_PERSIS_DTL.source_record_id
+FROM
+SQ_PERSIS_DTL
+);
+
+
+-- Component PERSIS_DTL1, Type TARGET 
+INSERT INTO db_t_prod_comn.PERSIS_DTL
+(
+PS_RPT_TYPE,
+PS_TRANS,
+PS_REG,
+PS_DIST,
+PS_AGT,
+PS_POLICY,
+PS_AGT_PRIM,
+PS_STAT,
+PS_VAL,
+PS_ACTIVE,
+PS_TYPE,
+PS_NAME,
+PS_PLAN,
+PS_ISS_DT,
+PS_XPRY_DT,
+PS_AGT_SHR,
+PS_TARGET,
+PS_RATIO,
+PS_ANLZD_PREM,
+PS_INF_PREM,
+PS_START_DATE,
+PS_END_DATE,
+PS_TIMEFRAME,
+PS_TIMEFRAME_PC,
+PS_TYPE_RUN,
+PS_PROC_DATE,
+PS_VOLUME,
+PS_ASSOCAGT,
+PRCS_ID
+)
+SELECT
+exp_pass_through.PS_RPT_TYPE as PS_RPT_TYPE,
+exp_pass_through.PS_TRANS as PS_TRANS,
+exp_pass_through.PS_REG as PS_REG,
+exp_pass_through.PS_DIST as PS_DIST,
+exp_pass_through.PS_AGT as PS_AGT,
+exp_pass_through.PS_POLICY as PS_POLICY,
+exp_pass_through.PS_AGT_PRIM as PS_AGT_PRIM,
+exp_pass_through.PS_STAT as PS_STAT,
+exp_pass_through.PS_VAL as PS_VAL,
+exp_pass_through.PS_ACTIVE as PS_ACTIVE,
+exp_pass_through.PS_TYPE as PS_TYPE,
+exp_pass_through.PS_NAME as PS_NAME,
+exp_pass_through.PS_PLAN as PS_PLAN,
+exp_pass_through.PS_ISS_DT as PS_ISS_DT,
+exp_pass_through.PS_XPRY_DT as PS_XPRY_DT,
+exp_pass_through.PS_AGT_SHR as PS_AGT_SHR,
+exp_pass_through.PS_TARGET as PS_TARGET,
+exp_pass_through.PS_RATIO as PS_RATIO,
+exp_pass_through.PS_ANLZD_PREM as PS_ANLZD_PREM,
+exp_pass_through.PS_INF_PREM as PS_INF_PREM,
+exp_pass_through.PS_START_DATE as PS_START_DATE,
+exp_pass_through.PS_END_DATE as PS_END_DATE,
+exp_pass_through.PS_TIMEFRAME as PS_TIMEFRAME,
+exp_pass_through.PS_TIMEFRAME_PC as PS_TIMEFRAME_PC,
+exp_pass_through.PS_TYPE_RUN as PS_TYPE_RUN,
+exp_pass_through.o_PS_PROC_DATE as PS_PROC_DATE,
+exp_pass_through.PS_VOLUME as PS_VOLUME,
+exp_pass_through.PS_ASSOCAGT as PS_ASSOCAGT,
+exp_pass_through.PRCS_ID as PRCS_ID
+FROM
+exp_pass_through;
+
+
+END; ';

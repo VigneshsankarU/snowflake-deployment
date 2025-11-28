@@ -1,0 +1,334 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_BASE_TAX_LOC_INSUPD("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS '  
+DECLARE start_dttm TIMESTAMP;
+end_dttm TIMESTAMP;
+PRCS_ID INTEGER;
+NEXTVAL integer;
+BEGIN 
+start_dttm := CURRENT_TIMESTAMP();
+end_dttm := CURRENT_TIMESTAMP();
+PRCS_ID := 1;  
+NEXTVAL:=1;
+
+-- Component LKP_CITY, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_CITY AS
+(
+SELECT CITY.CITY_ID as CITY_ID, CITY.EDW_STRT_DTTM as EDW_STRT_DTTM, CITY.EDW_END_DTTM as EDW_END_DTTM, CITY.TERR_ID as TERR_ID, CITY.GEOGRCL_AREA_SHRT_NAME as GEOGRCL_AREA_SHRT_NAME 
+
+FROM DB_T_PROD_CORE.CITY 
+
+WHERE CAST(CITY.EDW_END_DTTM AS DATE)=CAST(''9999-12-31'' AS DATE)
+);
+
+
+-- Component LKP_CTRY, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_CTRY AS
+(
+SELECT CTRY.CTRY_ID as CTRY_ID, CTRY.GEOGRCL_AREA_NAME as GEOGRCL_AREA_NAME, CTRY.GEOGRCL_AREA_DESC as GEOGRCL_AREA_DESC, CTRY.EDW_STRT_DTTM as EDW_STRT_DTTM, CTRY.EDW_END_DTTM as EDW_END_DTTM, CTRY.GEOGRCL_AREA_SHRT_NAME as GEOGRCL_AREA_SHRT_NAME 
+
+FROM DB_T_PROD_CORE.CTRY
+
+WHERE CAST(CTRY.EDW_END_DTTM AS DATE)=CAST(''9999-12-31'' AS DATE)
+);
+
+
+-- Component LKP_TERADATA_ETL_REF_XLAT_GEOGRCL_AREA_SBTYPE, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TERADATA_ETL_REF_XLAT_GEOGRCL_AREA_SBTYPE AS
+(
+SELECT 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL as TGT_IDNTFTN_VAL
+
+	,TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_VAL as SRC_IDNTFTN_VAL 
+
+FROM 
+
+	DB_T_PROD_CORE.TERADATA_ETL_REF_XLAT
+
+WHERE 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_NM= ''GEOGRCL_AREA_SBTYPE'' 
+
+             AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_NM= ''derived'' 
+
+		AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_SYS=''DS'' 
+
+		AND TERADATA_ETL_REF_XLAT.EXPN_DT=''9999-12-31''
+);
+
+
+-- Component LKP_TERADATA_ETL_REF_XLAT_LOCTR_SBTYPE, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TERADATA_ETL_REF_XLAT_LOCTR_SBTYPE AS
+(
+SELECT 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL as TGT_IDNTFTN_VAL
+
+	,TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_VAL as SRC_IDNTFTN_VAL 
+
+FROM 
+
+	DB_T_PROD_CORE.TERADATA_ETL_REF_XLAT
+
+WHERE 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_NM= ''LOCTR_SBTYPE'' 
+
+             AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_NM= ''derived'' 
+
+		AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_SYS=''DS'' 
+
+		AND TERADATA_ETL_REF_XLAT.EXPN_DT=''9999-12-31''
+);
+
+
+-- Component LKP_TERR, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TERR AS
+(
+SELECT TERR.TERR_ID as TERR_ID, TERR.GEOGRCL_AREA_NAME as GEOGRCL_AREA_NAME, TERR.GEOGRCL_AREA_DESC as GEOGRCL_AREA_DESC, TERR.GEOGRCL_AREA_STRT_DTTM as GEOGRCL_AREA_STRT_DTTM, TERR.GEOGRCL_AREA_END_DTTM as GEOGRCL_AREA_END_DTTM, TERR.LOCTR_SBTYPE_CD as LOCTR_SBTYPE_CD, TERR.GEOGRCL_AREA_SBTYPE_CD as GEOGRCL_AREA_SBTYPE_CD, TERR.EDW_STRT_DTTM as EDW_STRT_DTTM, TERR.EDW_END_DTTM as EDW_END_DTTM, TERR.CTRY_ID as CTRY_ID, TERR.GEOGRCL_AREA_SHRT_NAME as GEOGRCL_AREA_SHRT_NAME FROM DB_T_PROD_CORE.TERR
+
+WHERE CAST(TERR.EDW_END_DTTM AS DATE)=CAST(''9999-12-31'' AS DATE)
+);
+
+
+-- Component SQ_pc_taxlocation, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_pc_taxlocation AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as City,
+$2 as Code,
+$3 as START_DT,
+$4 as TYPECODE,
+$5 as COUNTRY,
+$6 as END_DT,
+$7 as RETIRED,
+$8 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+select  PC_TAXLOCATION.CITY_stg,
+
+       PC_TAXLOCATION.CODE_stg,
+
+       PC_TAXLOCATION.EFFECTIVEDATE_stg AS STRT_DT_stg,
+
+       PCTL_JURISDICTION.TYPECODE_stg,
+
+        ''US'' AS COUNTRY,
+
+        cast(Null as timestamp) AS END_DATE,
+
+        PC_TAXLOCATION.RETIRED_stg  
+
+
+
+FROM
+
+ DB_T_PROD_STAG.PC_TAXLOCATION  
+
+
+
+JOIN DB_T_PROD_STAG.PCTL_JURISDICTION 
+
+    ON PCTL_JURISDICTION.ID_stg=pc_taxlocation.STATE_stg
+
+	 where    pc_taxlocation.UpdateTime_stg > (:start_dttm) 
+
+    AND pc_taxlocation.UpdateTime_stg <= (:end_dttm)
+) SRC
+)
+);
+
+
+-- Component exp_pass_frm_source, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_frm_source AS
+(
+SELECT
+SQ_pc_taxlocation.Code as GEOGRCL_SHRT_NAME,
+SQ_pc_taxlocation.START_DT as START_DT,
+LKP_1.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT_GEOGRCL_AREA_SBTYPE */ as v_geogrcl_area_sbtype,
+v_geogrcl_area_sbtype as out_geogrcl_area_sbtype,
+LKP_2.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT_LOCTR_SBTYPE */ as v_loctr_sbtype_val,
+v_loctr_sbtype_val as out_loctr_sbtype_val,
+CASE WHEN SQ_pc_taxlocation.END_DT IS NULL THEN to_timestamp ( ''12/31/9999 23:59:59.999999'' , ''MM/DD/YYYY HH24:MI:SS.FF6'' ) ELSE SQ_pc_taxlocation.END_DT END as out_END_DT,
+SQ_pc_taxlocation.RETIRED as RETIRED,
+:PRCS_ID as PRCS_ID,
+LKP_3.CTRY_ID /* replaced lookup LKP_CTRY */ as v_CTRY_ID,
+LKP_4.TERR_ID /* replaced lookup LKP_TERR */ as v_TERR_ID,
+v_TERR_ID as out_TERR_ID,
+LKP_5.CITY_ID /* replaced lookup LKP_CITY */ as OUT_CITY_ID,
+CURRENT_TIMESTAMP as EDW_STRT_DTTM,
+to_timestamp ( ''12/31/9999 23:59:59.999999'' , ''MM/DD/YYYY HH24:MI:SS.FF6'' ) as EDW_END_DTTM,
+SQ_pc_taxlocation.source_record_id,
+row_number() over (partition by SQ_pc_taxlocation.source_record_id order by SQ_pc_taxlocation.source_record_id) as RNK
+FROM
+SQ_pc_taxlocation
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT_GEOGRCL_AREA_SBTYPE LKP_1 ON LKP_1.SRC_IDNTFTN_VAL = ''GEOGRCL_AREA_SBTYPE6''
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT_LOCTR_SBTYPE LKP_2 ON LKP_2.SRC_IDNTFTN_VAL = ''LOCTR_SBTYPE3''
+LEFT JOIN LKP_CTRY LKP_3 ON LKP_3.GEOGRCL_AREA_SHRT_NAME = SQ_pc_taxlocation.COUNTRY
+LEFT JOIN LKP_TERR LKP_4 ON LKP_4.CTRY_ID = v_CTRY_ID AND LKP_4.GEOGRCL_AREA_SHRT_NAME = SQ_pc_taxlocation.TYPECODE
+LEFT JOIN LKP_CITY LKP_5 ON LKP_5.TERR_ID = v_TERR_ID AND LKP_5.GEOGRCL_AREA_SHRT_NAME = SQ_pc_taxlocation.City
+QUALIFY RNK = 1
+);
+
+
+-- Component LKP_TAX_LOC, Type LOOKUP 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TAX_LOC AS
+(
+SELECT
+LKP.TAX_LOC_ID,
+LKP.GEOGRCL_SHRT_NAME,
+LKP.GEOGRCL_AREA_NAME,
+LKP.GEOGRCL_STRT_DT,
+LKP.GEOGRCL_END_DT,
+LKP.LOCTR_SBTYPE_CD,
+LKP.GEOGRCL_AREA_SBTYPE_CD,
+exp_pass_frm_source.source_record_id,
+ROW_NUMBER() OVER(PARTITION BY exp_pass_frm_source.source_record_id ORDER BY LKP.TAX_LOC_ID asc,LKP.CITY_ID asc,LKP.GEOGRCL_SHRT_NAME asc,LKP.GEOGRCL_AREA_NAME asc,LKP.GEOGRCL_STRT_DT asc,LKP.GEOGRCL_END_DT asc,LKP.LOCTR_SBTYPE_CD asc,LKP.GEOGRCL_AREA_SBTYPE_CD asc,LKP.TERR_ID asc) RNK
+FROM
+exp_pass_frm_source
+LEFT JOIN (
+SELECT	TAX_LOC.TAX_LOC_ID as TAX_LOC_ID, TAX_LOC.GEOGRCL_AREA_NAME as GEOGRCL_AREA_NAME,
+		TAX_LOC.GEOGRCL_STRT_DT as GEOGRCL_STRT_DT, TAX_LOC.GEOGRCL_END_DT as GEOGRCL_END_DT,
+		TAX_LOC.LOCTR_SBTYPE_CD as LOCTR_SBTYPE_CD, TAX_LOC.GEOGRCL_AREA_SBTYPE_CD as GEOGRCL_AREA_SBTYPE_CD,TAX_LOC.CITY_ID as CITY_ID,
+		TAX_LOC.GEOGRCL_SHRT_NAME as GEOGRCL_SHRT_NAME, TAX_LOC.TERR_ID as TERR_ID 
+FROM	DB_T_PROD_CORE.TAX_LOC 
+WHERE	CAST(TAX_LOC.EDW_END_DTTM AS DATE)=CAST(''9999-12-31'' AS DATE)
+) LKP ON LKP.CITY_ID = exp_pass_frm_source.OUT_CITY_ID AND LKP.GEOGRCL_SHRT_NAME = exp_pass_frm_source.GEOGRCL_SHRT_NAME AND LKP.TERR_ID = exp_pass_frm_source.out_TERR_ID
+QUALIFY RNK = 1
+);
+
+
+-- Component exp_ins_upd, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_ins_upd AS
+(
+SELECT
+LKP_TAX_LOC.TAX_LOC_ID as LKP_TAX_LOC_ID,
+exp_pass_frm_source.OUT_CITY_ID as OUT_CITY_ID,
+exp_pass_frm_source.GEOGRCL_SHRT_NAME as GEOGRCL_SHRT_NAME,
+exp_pass_frm_source.START_DT as START_DT,
+exp_pass_frm_source.out_END_DT as out_END_DT,
+exp_pass_frm_source.out_loctr_sbtype_val as out_loctr_sbtype_val,
+exp_pass_frm_source.out_geogrcl_area_sbtype as out_geogrcl_area_sbtype,
+exp_pass_frm_source.out_TERR_ID as out_TERR_ID,
+exp_pass_frm_source.PRCS_ID as PRCS_ID,
+exp_pass_frm_source.EDW_STRT_DTTM as EDW_STRT_DTTM,
+exp_pass_frm_source.EDW_END_DTTM as EDW_END_DTTM,
+MD5 ( LTRIM ( RTRIM ( LKP_TAX_LOC.GEOGRCL_SHRT_NAME ) ) || LTRIM ( RTRIM ( LKP_TAX_LOC.GEOGRCL_AREA_NAME ) ) || LTRIM ( RTRIM ( ( TO_CHAR ( LKP_TAX_LOC.GEOGRCL_STRT_DT ) ) ) ) || LTRIM ( RTRIM ( LKP_TAX_LOC.LOCTR_SBTYPE_CD ) ) || LTRIM ( RTRIM ( LKP_TAX_LOC.GEOGRCL_AREA_SBTYPE_CD ) ) ) as LKP_MD5,
+MD5 ( LTRIM ( RTRIM ( exp_pass_frm_source.GEOGRCL_SHRT_NAME ) ) || LTRIM ( RTRIM ( exp_pass_frm_source.GEOGRCL_SHRT_NAME ) ) || LTRIM ( RTRIM ( ( TO_CHAR ( exp_pass_frm_source.START_DT ) ) ) ) || LTRIM ( RTRIM ( exp_pass_frm_source.out_loctr_sbtype_val ) ) || LTRIM ( RTRIM ( exp_pass_frm_source.out_geogrcl_area_sbtype ) ) ) as SRC_MD5,
+CASE WHEN LKP_MD5 IS NULL THEN ''I'' ELSE ( CASE WHEN LKP_MD5 <> SRC_MD5 THEN ''U'' ELSE ''R'' END ) END as OUT_INS_UPD,
+exp_pass_frm_source.RETIRED as RETIRED,
+exp_pass_frm_source.source_record_id
+FROM
+exp_pass_frm_source
+INNER JOIN LKP_TAX_LOC ON exp_pass_frm_source.source_record_id = LKP_TAX_LOC.source_record_id
+);
+
+
+-- Component Rtr_ins_upd_INSERT, Type ROUTER Output Group INSERT
+CREATE OR REPLACE TEMPORARY TABLE Rtr_ins_upd_INSERT AS
+(SELECT
+exp_ins_upd.OUT_CITY_ID as OUT_CITY_ID,
+exp_ins_upd.GEOGRCL_SHRT_NAME as GEOGRCL_SHRT_NAME,
+exp_ins_upd.START_DT as START_DT,
+exp_ins_upd.out_END_DT as out_END_DT,
+exp_ins_upd.out_loctr_sbtype_val as out_loctr_sbtype_val,
+exp_ins_upd.out_geogrcl_area_sbtype as out_geogrcl_area_sbtype,
+exp_ins_upd.out_TERR_ID as out_TERR_ID,
+exp_ins_upd.PRCS_ID as PRCS_ID,
+exp_ins_upd.EDW_STRT_DTTM as EDW_STRT_DTTM,
+exp_ins_upd.EDW_END_DTTM as EDW_END_DTTM,
+exp_ins_upd.RETIRED as RETIRED,
+exp_ins_upd.OUT_INS_UPD as OUT_INS_UPD,
+exp_ins_upd.LKP_TAX_LOC_ID as LKP_TAX_LOC_ID,
+NULL as LKP_EDW_STRT_DTTM,
+NULL as LKP_EDW_END_DTTM,
+exp_ins_upd.source_record_id
+FROM
+exp_ins_upd
+WHERE exp_ins_upd.OUT_INS_UPD = ''I'' 
+-- or ( exp_ins_upd.OUT_INS_UPD = ''U'' AND LKP_EDW_END_DTTM = TO_timestamp( ''12/31/9999 23:59:59.999999'' , ''MM/DD/YYYY HH24:MI:SS.FF6'' ) )
+);
+
+
+-- Component upd_ins_new, Type UPDATE 
+CREATE OR REPLACE TEMPORARY TABLE upd_ins_new AS
+(
+/* UPDATE_STRATEGY_ACTION = 0 FOR INSERT / UPDATE_STRATEGY_ACTION = 1 FOR UPDATE / UPDATE_STRATEGY_ACTION = 2 FOR DELETE / UPDATE_STRATEGY_ACTION = 3 FOR REJECT */
+SELECT
+Rtr_ins_upd_INSERT.OUT_CITY_ID as OUT_CITY_ID1,
+Rtr_ins_upd_INSERT.GEOGRCL_SHRT_NAME as GEOGRCL_SHRT_NAME1,
+Rtr_ins_upd_INSERT.START_DT as START_DT1,
+Rtr_ins_upd_INSERT.out_END_DT as out_END_DT1,
+Rtr_ins_upd_INSERT.out_loctr_sbtype_val as out_loctr_sbtype_val1,
+Rtr_ins_upd_INSERT.out_geogrcl_area_sbtype as out_geogrcl_area_sbtype1,
+Rtr_ins_upd_INSERT.out_TERR_ID as out_TERR_ID1,
+Rtr_ins_upd_INSERT.PRCS_ID as PRCS_ID1,
+Rtr_ins_upd_INSERT.EDW_STRT_DTTM as EDW_STRT_DTTM1,
+Rtr_ins_upd_INSERT.EDW_END_DTTM as EDW_END_DTTM1,
+Rtr_ins_upd_INSERT.RETIRED as RETIRED1,
+0 as UPDATE_STRATEGY_ACTION,
+Rtr_ins_upd_INSERT.source_record_id
+FROM
+Rtr_ins_upd_INSERT
+);
+
+
+-- Component exp_ins_new, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_ins_new AS
+(
+SELECT
+upd_ins_new.OUT_CITY_ID1 as OUT_CITY_ID1,
+upd_ins_new.GEOGRCL_SHRT_NAME1 as GEOGRCL_SHRT_NAME1,
+upd_ins_new.START_DT1 as START_DT1,
+upd_ins_new.out_END_DT1 as out_END_DT1,
+upd_ins_new.out_loctr_sbtype_val1 as out_loctr_sbtype_val1,
+upd_ins_new.out_geogrcl_area_sbtype1 as out_geogrcl_area_sbtype1,
+upd_ins_new.out_TERR_ID1 as out_TERR_ID1,
+upd_ins_new.PRCS_ID1 as PRCS_ID1,
+upd_ins_new.EDW_STRT_DTTM1 as EDW_STRT_DTTM1,
+upd_ins_new.EDW_END_DTTM1 as EDW_END_DTTM1,
+:NEXTVAL as TAX_LOC_ID,
+upd_ins_new.source_record_id
+FROM
+upd_ins_new
+);
+
+
+-- Component TAX_LOC_ins_new, Type TARGET 
+INSERT INTO DB_T_PROD_CORE.TAX_LOC
+(
+TAX_LOC_ID,
+CITY_ID,
+GEOGRCL_SHRT_NAME,
+GEOGRCL_AREA_NAME,
+GEOGRCL_STRT_DT,
+GEOGRCL_END_DT,
+LOCTR_SBTYPE_CD,
+GEOGRCL_AREA_SBTYPE_CD,
+TERR_ID,
+PRCS_ID,
+EDW_STRT_DTTM,
+EDW_END_DTTM
+)
+SELECT
+exp_ins_new.TAX_LOC_ID as TAX_LOC_ID,
+exp_ins_new.OUT_CITY_ID1 as CITY_ID,
+exp_ins_new.GEOGRCL_SHRT_NAME1 as GEOGRCL_SHRT_NAME,
+exp_ins_new.GEOGRCL_SHRT_NAME1 as GEOGRCL_AREA_NAME,
+exp_ins_new.START_DT1 as GEOGRCL_STRT_DT,
+exp_ins_new.out_END_DT1 as GEOGRCL_END_DT,
+exp_ins_new.out_loctr_sbtype_val1 as LOCTR_SBTYPE_CD,
+exp_ins_new.out_geogrcl_area_sbtype1 as GEOGRCL_AREA_SBTYPE_CD,
+exp_ins_new.out_TERR_ID1 as TERR_ID,
+exp_ins_new.PRCS_ID1 as PRCS_ID,
+exp_ins_new.EDW_STRT_DTTM1 as EDW_STRT_DTTM,
+exp_ins_new.EDW_END_DTTM1 as EDW_END_DTTM
+FROM
+exp_ins_new;
+
+
+END; ';

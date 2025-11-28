@@ -1,0 +1,70 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_BAL_STG_POLS_DLY("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' DECLARE 
+SRC_TBL_NM varchar;
+TGT_TBL_NM varchar;
+BEGIN 
+
+SRC_TBL_NM:=''DB_T_STAG_MEMBXREF_PROD.STG_FGMPOLS_DLY''; 
+TGT_TBL_NM:=''DB_T_CORE_MEMBXREF_PROD.FGMPOLS_DLY''; 
+
+-- Component SQ_FARMPOLS, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_FARMPOLS AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as FLAG,
+$2 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT 	
+	CASE WHEN STG_ROW_CNT - TRG_ROW_CNT = 0 THEN 1 
+	ELSE 2
+	END
+FROM 
+	(SELECT COUNT(*) STG_ROW_CNT 
+	FROM table(:SRC_TBL_NM)
+	,DB_T_STAG_MEMBXREF_PROD.STG_MEMBXREF_TRIGGER_DLY  
+	WHERE TABLENAME = :TGT_TBL_NM AND LOAD_DT=FEED_DT-1) A 
+	JOIN
+	(SELECT RECORD_CNT TRG_ROW_CNT 
+	FROM DB_T_STAG_MEMBXREF_PROD.STG_MEMBXREF_TRIGGER_DLY  
+	WHERE TABLENAME = :TGT_TBL_NM) B
+	ON 1=1
+) SRC
+)
+);
+
+
+-- Component exp_pass_through, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_through AS
+(
+SELECT
+SQ_FARMPOLS.FLAG as FLAG,
+CASE WHEN SQ_FARMPOLS.FLAG <> ''1'' THEN 
+null --RAISE_ERROR(''The source and target row count are not equal'') 
+ELSE null --$3
+END as var_check_bal,
+SQ_FARMPOLS.source_record_id
+FROM
+SQ_FARMPOLS
+);
+
+
+-- Component DUMMY, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE DUMMY AS
+(
+SELECT
+exp_pass_through.FLAG as FLAG
+FROM
+exp_pass_through
+);
+
+
+-- Component DUMMY, Type EXPORT_DATA Exporting data
+;
+
+
+END; ';

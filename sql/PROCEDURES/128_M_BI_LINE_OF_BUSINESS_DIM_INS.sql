@@ -1,0 +1,80 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_BI_LINE_OF_BUSINESS_DIM_INS("WORKLET_NAME" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' BEGIN 
+
+-- Component SRC_SQ_PROD, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SRC_SQ_PROD AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as PROD_DESC,
+$2 as PROD_NAME,
+$3 as INSRNC_LOB_TYPE_CD,
+$4 as INSRNC_LOB_TYPE_DESC,
+$5 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT 
+
+	PROD.PROD_DESC, 
+
+	PROD.PROD_NAME, 
+
+	PROD.INSRNC_LOB_TYPE_CD ,
+
+	INSRNC_LOB_TYPE_DESC
+
+FROM  
+
+	DB_T_PROD_CORE.PROD,
+
+	DB_T_PROD_CORE.INSRNC_LOB_TYPE
+
+WHERE 
+
+	PROD_SBTYPE_CD = ''PLCYTYPE''
+
+ 	AND PROD.INSRNC_LOB_TYPE_CD=INSRNC_LOB_TYPE.INSRNC_LOB_TYPE_CD
+
+ 	AND INSRNC_LOB_TYPE.EXPN_DT = TO_DATE(''99991231'',''YYYYMMDD'')
+
+and PROD.EDW_END_DTTM=''9999-12-31 23:59:59.999999''
+) SRC
+)
+);
+
+
+-- Component exp_pass_to_tgt, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_to_tgt AS
+(
+SELECT
+SRC_SQ_PROD.PROD_NAME as plcy_type_cd,
+SRC_SQ_PROD.INSRNC_LOB_TYPE_CD as lob_type_cd,
+SRC_SQ_PROD.PROD_DESC as plcy_type_desc,
+SRC_SQ_PROD.INSRNC_LOB_TYPE_DESC as lob_type_desc,
+SRC_SQ_PROD.source_record_id
+FROM
+SRC_SQ_PROD
+);
+
+
+-- Component tgt_LOB_D, Type TARGET 
+INSERT INTO DB_V_PROD_BASE.LOB_D
+(
+PLCY_TYPE_CD,
+LOB_TYPE_CD,
+PLCY_TYPE_DESC,
+LOB_TYPE_DESC
+)
+SELECT
+exp_pass_to_tgt.plcy_type_cd as PLCY_TYPE_CD,
+exp_pass_to_tgt.lob_type_cd as LOB_TYPE_CD,
+exp_pass_to_tgt.plcy_type_desc as PLCY_TYPE_DESC,
+exp_pass_to_tgt.lob_type_desc as LOB_TYPE_DESC
+FROM
+exp_pass_to_tgt;
+
+
+END; ';

@@ -1,0 +1,78 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_ANALYTICS_AGG_CREATE_PARAM("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' BEGIN 
+
+-- Component sq_ECTL_MISPREM_HEADER, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE sq_ECTL_MISPREM_HEADER AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as YEAR_ID,
+$2 as MONTH_ID,
+$3 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT extract( year from (cast(TO_DATE as date)) ) as YEAR_ID,extract (month from (cast(TO_DATE as date)) )as MONTH_ID 
+FROM DB_T_CTRL_PROD.ECTL_MISPREM_HEADER where cast(cyc_end_dt as date) = (select max(cast(cyc_end_Dt as date)) from DB_T_CTRL_PROD.ECTL_MISPREM_HEADER)
+) SRC
+)
+);
+
+
+-- Component exp_CREATE_PARAM_FILE, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_CREATE_PARAM_FILE AS
+(
+SELECT
+( sq_ECTL_MISPREM_HEADER.YEAR_ID * 100 + sq_ECTL_MISPREM_HEADER.MONTH_ID ) as var_mth_id,
+( sq_ECTL_MISPREM_HEADER.YEAR_ID * 10000 ) + ( sq_ECTL_MISPREM_HEADER.MONTH_ID * 100 ) + 1 as var_dt_id,
+LAST_DAY ( TO_DATE ( TO_CHAR ( var_dt_id ) , ''YYYYMMDD'' ) ) as var_CAL_END_DATE_dt,
+DATE_PART(''YYYY'', TO_TIMESTAMP(var_CAL_END_DATE_dt)) as var_CAL_END_DATE_year,
+DATE_PART(''MM'', TO_TIMESTAMP(var_CAL_END_DATE_dt)) as var_CAL_END_DATE_mth,
+CASE WHEN TO_NUMBER(var_CAL_END_DATE_mth) < 10 THEN ''0'' || var_CAL_END_DATE_mth ELSE var_CAL_END_DATE_mth END as var_CAL_END_DATE_mm,
+DATE_PART(''DD'', TO_TIMESTAMP(var_CAL_END_DATE_dt)) as var_CAL_END_DATE_day,
+var_CAL_END_DATE_year || ''-'' || var_CAL_END_DATE_mm || ''-'' || var_CAL_END_DATE_day as var_CAL_END_DATE_str,
+''[Global]'' as out_CONNECTION_param1,
+''$wf_MONTH_ID='' || TO_CHAR ( var_mth_id ) as out_MONTH_ID_param3,
+''$wf_CAL_END_DT='' || var_CAL_END_DATE_str as out_CAL_END_DATE_param4,
+sq_ECTL_MISPREM_HEADER.source_record_id
+FROM
+sq_ECTL_MISPREM_HEADER
+);
+
+
+-- Component nrm_COLUMNS_TO_RECORDS, Type NORMALIZER 
+CREATE OR REPLACE TEMPORARY TABLE nrm_COLUMNS_TO_RECORDS AS
+(
+SELECT  * FROM
+( /* start of inner SQL */
+SELECT
+exp_CREATE_PARAM_FILE.out_CONNECTION_param1 as WRITE_RECORD_in1,
+exp_CREATE_PARAM_FILE.out_MONTH_ID_param3 as WRITE_RECORD_in2,
+exp_CREATE_PARAM_FILE.out_CAL_END_DATE_param4 as WRITE_RECORD_in3,
+exp_CREATE_PARAM_FILE.source_record_id,
+null WRITE_RECORD
+FROM
+exp_CREATE_PARAM_FILE
+/* end of inner SQL */
+)
+--UNPIVOT(WRITE_RECORD) FOR REC_NO IN (WRITE_RECORD_in1 AS REC1, WRITE_RECORD_in2 AS REC2, WRITE_RECORD_in3 AS REC3) UNPIVOT_TBL
+);
+
+
+-- Component ANALYTICS_AGG_PARAM, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE ANALYTICS_AGG_PARAM AS
+(
+SELECT
+nrm_COLUMNS_TO_RECORDS.WRITE_RECORD as OUTPUT
+FROM
+nrm_COLUMNS_TO_RECORDS
+);
+
+
+-- Component ANALYTICS_AGG_PARAM, Type EXPORT_DATA Exporting data
+;
+
+
+END; ';

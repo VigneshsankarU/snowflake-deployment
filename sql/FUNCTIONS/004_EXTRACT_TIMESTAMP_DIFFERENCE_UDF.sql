@@ -1,0 +1,42 @@
+-- Object Type: FUNCTIONS
+CREATE OR REPLACE FUNCTION ALFA_EDW_DEV.PUBLIC.EXTRACT_TIMESTAMP_DIFFERENCE_UDF("MINUEND" TIMESTAMP_NTZ(9), "SUBTRAHEND" TIMESTAMP_NTZ(9), "INPUT_PART" VARCHAR, "EXTRACT_PART" VARCHAR)
+RETURNS NUMBER(38,0)
+LANGUAGE SQL
+IMMUTABLE
+COMMENT='{ \"origin\": \"sf_sc\", \"name\": \"snowconvert\", \"version\": {  \"major\": 1,  \"minor\": 7,  \"patch\": \"1.0\" }, \"attributes\": {  \"component\": \"udf\",  \"convertedOn\": \"06/04/2025\",  \"domain\": \"alfains\" }}'
+AS '
+    CASE WHEN INPUT_PART LIKE ''YEAR%'' THEN
+        CASE WHEN EXTRACT_PART = ''YEAR'' THEN
+            split(PUBLIC.TIMESTAMP_DIFFERENCE_UDF(MINUEND, SUBTRAHEND, INPUT_PART), ''-'')[0]::INTEGER
+        WHEN EXTRACT_PART = ''MONTH'' THEN
+            split(PUBLIC.TIMESTAMP_DIFFERENCE_UDF(MINUEND, SUBTRAHEND, INPUT_PART), ''-'')[1]::INTEGER
+        ELSE
+            DECODE(EXTRACT_PART,
+                    ''YEAR'',             DATEDIFF(YEAR, SUBTRAHEND, MINUEND),
+                    ''MONTH'',            DATEDIFF(MONTH, SUBTRAHEND, MINUEND),
+                    ''DAY'',              DATEDIFF(DAY, SUBTRAHEND, MINUEND),
+                    ''HOUR'',             DATEDIFF(HOUR, SUBTRAHEND, MINUEND),
+                    ''MINUTE'',           DATEDIFF(MINUTE, SUBTRAHEND, MINUEND),
+                    ''SECOND'',           DATEDIFF(SECOND, SUBTRAHEND, MINUEND)
+                    )
+        END
+    WHEN INPUT_PART LIKE ''DAY%'' THEN
+        CASE WHEN EXTRACT_PART = ''DAY'' THEN
+                split(PUBLIC.TIMESTAMP_DIFFERENCE_UDF(MINUEND, SUBTRAHEND, INPUT_PART), '' '')[0]::INTEGER
+             WHEN EXTRACT_PART = ''HOUR'' THEN
+                split(split(PUBLIC.TIMESTAMP_DIFFERENCE_UDF(MINUEND, SUBTRAHEND, INPUT_PART), '' '')[1]::VARCHAR,'':'')[0]::INTEGER
+             WHEN EXTRACT_PART = ''MINUTE'' THEN
+                split(split(PUBLIC.TIMESTAMP_DIFFERENCE_UDF(MINUEND, SUBTRAHEND, INPUT_PART), '' '')[1]::VARCHAR,'':'')[1]::INTEGER
+             WHEN EXTRACT_PART = ''SECOND'' THEN
+                split(split(PUBLIC.TIMESTAMP_DIFFERENCE_UDF(MINUEND, SUBTRAHEND, INPUT_PART), '' '')[1]::VARCHAR,'':'')[2]::INTEGER
+        END
+    ELSE
+        CASE WHEN EXTRACT_PART = ''HOUR'' THEN
+            split(PUBLIC.TIMESTAMP_DIFFERENCE_UDF(MINUEND, SUBTRAHEND, INPUT_PART),'':'')[0]::INTEGER
+        WHEN EXTRACT_PART = ''MINUTE'' THEN
+            split(PUBLIC.TIMESTAMP_DIFFERENCE_UDF(MINUEND, SUBTRAHEND, INPUT_PART),'':'')[1]::INTEGER
+        WHEN EXTRACT_PART = ''SECOND'' THEN
+            split(PUBLIC.TIMESTAMP_DIFFERENCE_UDF(MINUEND, SUBTRAHEND, INPUT_PART),'':'')[2]::INTEGER
+        END
+    END
+';

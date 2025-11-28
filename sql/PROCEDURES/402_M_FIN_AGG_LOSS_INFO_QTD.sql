@@ -1,0 +1,300 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_FIN_AGG_LOSS_INFO_QTD("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' 
+DECLARE 
+WF_MONTH_ID INTEGER;
+BEGIN 
+WF_MONTH_ID:=1;
+
+-- Component tgt_AGG_LOSS_INFO_QTD, Type Pre SQL 
+DELETE  from DB_T_CORE_FIN_PROD.AGG_LOSS_INFO_QTD where mo_id=:WF_MONTH_ID;
+
+
+-- Component SQ_AGG_LOSS_INFO_QTD, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_AGG_LOSS_INFO_QTD AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as MO_ID,
+$2 as CMPY_CD,
+$3 as ST_CD,
+$4 as RSV_GRP,
+$5 as LOB_CD,
+$6 as PRODUCT_CD,
+$7 as PRODUCT_DESC,
+$8 as ACCTNG_MO,
+$9 as ACCTNG_YR,
+$10 as ACCTNG_QT,
+$11 as CAT,
+$12 as POOL_CD,
+$13 as POOL_DESC,
+$14 as MONETARY_AMT,
+$15 as LOSS_MO,
+$16 as LOSS_YR,
+$17 as LOSS_QT,
+$18 as ACCT_NBR,
+$19 as GL_ACCT_DESC,
+$20 as GL_ACCT_GRP,
+$21 as LEDGER,
+$22 as PLCY_TYPE,
+$23 as ECTL_ORIG_INS_TS,
+$24 as PROD_PLAN,
+$25 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT MO_ID,FL.CMPY_CD,FL.ST_CD,
+
+       COALESCE(CASE WHEN FL.PRODUCT_CD=''F00001''and  (cast(PLCY_TYPE as varchar(50)) like ''SF%'' OR cast(PROD_NAME as varchar(50)) like ''SF%'') AND FL.CMPY_CD IN (''AIC'',''AMF'') THEN ''Fire'' 
+
+WHEN FL.PRODUCT_CD=''F00001''and (cast(PLCY_TYPE as varchar(50)) like ''SF%'' OR cast(PROD_NAME as varchar(50)) like ''SF%'') AND FL.CMPY_CD IN (''AAI'') THEN ''No_Triangle'' 
+
+WHEN FL.PRODUCT_CD=''F00001''and (cast(PLCY_TYPE as varchar(50)) like ''SF%'' OR cast(PROD_NAME as varchar(50))  like ''SF%'') AND FL.CMPY_CD IN (''AMI'') THEN ''No_Triangle'' 
+
+WHEN FL.PRODUCT_CD=''F00001''and (cast(PLCY_TYPE as varchar(50)) not like ''SF%'' OR cast(PROD_NAME as varchar(50)) not like ''SF%'') AND FL.CMPY_CD IN (''AMI'') THEN ''Fire'' 
+
+WHEN FL.PRODUCT_CD=''GL0001''and (cast(PLCY_TYPE as varchar(50))  like ''PERSUMBRELLA%'' OR cast(PROD_NAME as varchar(50))  like ''PersonalUmbrella%'') AND FL.CMPY_CD IN (''AIC'',''AMI'') THEN ''Limited_Umbrella'' 
+
+WHEN FL.PRODUCT_CD=''GL0001''and (cast(PLCY_TYPE as varchar(50)) NOT like ''PERSUMBRELLA%'' OR cast(PROD_NAME as varchar(50)) NOT  like ''PersonalUmbrella%'') AND FL.CMPY_CD IN (''AMI'') THEN ''OL'' 
+
+WHEN FL.PRODUCT_CD=''GL0001''and (cast(PLCY_TYPE as varchar(50))  NOT like ''PERSUMBRELLA%'' OR cast(PROD_NAME as varchar(50)) NOT  like ''PersonalUmbrella%'')AND FL.CMPY_CD IN (''AIC'') THEN ''No_Triangle'' ELSE
+
+RSV_GRP END, ''UNK'') RSV_GRP_new,
+
+  FL.LOB_CD,FL.PRODUCT_CD,CASE WHEN FL.PRODUCT_CD =''F00001'' AND (cast(PLCY_TYPE as varchar(50)) like ''SF%'' OR cast(PROD_NAME as varchar(50)) like ''SF%'') THEN ''Fire''
+
+		WHEN FL.PRODUCT_CD =''F00001'' AND  (cast(PLCY_TYPE as varchar(50)) not like ''SF%'' OR cast(PROD_NAME as varchar(50)) not like ''SF%'') THEN ''Farm Fire''
+
+		WHEN FL.PRODUCT_CD =''GL0001'' AND  (cast(PLCY_TYPE as varchar(50))  like ''PERSUMBRELLA%'' OR cast(PROD_NAME as varchar(50))  like ''PersonalUmbrella%'') THEN ''GW Personal Umbrella''
+
+		WHEN FL.PRODUCT_CD =''GL0001'' AND  (cast(PLCY_TYPE as varchar(50)) not  like ''PERSUMBRELLA%'' OR cast(PROD_NAME as varchar(50)) not  like ''PersonalUmbrella%'') THEN ''FARM UMBR PERS''
+
+		else 		COV_DESC end AS PRODUCT_DESC,
+
+  ACCTNG_MO,ACCTNG_YR,
+
+  CASE
+
+     WHEN ACCTNG_MO IN (1,2,3) THEN 1 
+
+     WHEN ACCTNG_MO IN (4,5,6) THEN 2 
+
+     WHEN ACCTNG_MO IN (7,8,9) THEN 3 
+
+     WHEN ACCTNG_MO IN (10,11,12) THEN 4 
+
+    END  ACCTNG_QT, 
+
+  CASE 
+
+  WHEN SUBSTR(FL.POOL_CD,1,3)=''CAT'' THEN ''CAT'' 
+
+ELSE ''NonCAT'' 
+
+END CAT,
+
+  FL.POOL_CD,POOL_DESC,sum(MONETARY_AMT),
+
+   EXTRACT(MONTH FROM CLM_LOSS_DT) LOSS_MO,
+
+  EXTRACT(YEAR FROM CLM_LOSS_DT) LOSS_YR,
+
+  CASE
+
+WHEN LOSS_MO IN (1,2,3) THEN 1 
+
+  WHEN LOSS_MO IN (4,5,6) THEN 2 
+
+  WHEN LOSS_MO IN (7,8,9) THEN 3 
+
+  WHEN LOSS_MO IN (10,11,12) THEN 4 
+
+  END  LOSS_QT,
+
+    FL.ACCT_NBR,ACT.ACCT_DESC,METRIC_LONG_NM ,  LEDGER ,FL.PLCY_TYPE, FL.ECTL_ORIG_INS_TS,
+
+    
+
+UPPER(COALESCE(
+
+case
+
+    when cast(PROD_NAME as varchar(50))=''BUSINESSOWNERS'' then ''BOP''
+
+    when cast(PROD_NAME as varchar(50)) like ''HO%'' then (case when gw.AGMT_PROD_CVGE_LVL_DESC=''HOME INNOVATION'' then ''HOINN'' else ''HO'' end)
+
+    when cast(PROD_NAME as varchar(50)) like ''MH%'' then ''MH''
+
+    when cast(PROD_NAME as varchar(50)) like ''SF%'' then ''SF''
+
+    when cast(PROD_NAME as varchar(50))=''WATERCRAFT'' then ''WTC''
+
+    when cast(PROD_NAME as varchar(50))=''PersonalUmbrella'' then ''UMB''
+
+	  when cast(PROD_NAME as varchar(50))=''FarmUmbrella'' then ''UMB''
+
+    else cast(PROD_NAME as varchar(50))
+
+end,case
+
+    when cast(FL.PLCY_TYPE as varchar(50))=''BUSINESSOWNERS'' then ''BOP''
+
+    when cast(FL.PLCY_TYPE as varchar(50)) like ''HO%'' then (case when gw.AGMT_PROD_CVGE_LVL_DESC=''HOME INNOVATION'' then ''HOINN'' else ''HO'' end)
+
+    when cast(FL.PLCY_TYPE as varchar(50)) like ''MH%'' then ''MH''
+
+    when cast(FL.PLCY_TYPE as varchar(50)) like ''SF%'' then ''SF''
+
+    when cast(FL.PLCY_TYPE as varchar(50))=''WATERCRAFT'' then ''WTC''
+
+    when cast(FL.PLCY_TYPE as varchar(50))=''PERSUMBRELLA'' then ''UMB''
+
+	 when cast(FL.PLCY_TYPE as varchar(50))=''FARMUMBRELLA'' then ''UMB''
+
+    else cast(FL.PLCY_TYPE as varchar(50))END ))as PROD_PLAN_NEW
+
+FROM DB_T_CORE_FIN_PROD.FIN_LOSS_TXN FL LEFT OUTER JOIN   DB_T_CORE_FIN_PROD.FIN_PRODUCT_HIER PRODT 
+
+ ON FL.PRODUCT_CD=PRODT.PRODUCT_CD  and PRODT.PRODUCT_CD not in (''F00001'',''GL0001'')LEFT OUTER JOIN (SELECT DISTINCT POOL_CD,POOL_DESC FROM DB_T_SHRD_FIN_PROD.FIN_POOL_CD_LKUP) POOL
+
+ON FL.POOL_CD=POOL.POOL_CD LEFT OUTER JOIN  DB_T_STAG_FIN_PROD.FIN_ACCT_NBR_GRP_LKUP  ACC  
+
+  ON FL.ACCT_NBR=ACC.ACCT_NBR LEFT OUTER JOIN (SELECT ACCT_NBR,ACCT_DESC FROM DB_T_SHRD_FIN_PROD.FIN_ACCT_NBR_LKUP  
+
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY ACCT_NBR ORDER BY  EFF_DT DESC)=1)ACT
+
+ON ACC.ACCT_NBR=ACT.ACCT_NBR  LEFT OUTER JOIN  (select  distinct  source, product_cd , CMPY_CD ,  RSV_GRP
+
+FROM   DB_T_SHRD_FIN_PROD.RSV_GRP_LKUP 
+
+where product_cd NOT in (''GL0001'',''F00001'')
+
+QUALIFY ROW_NUMBER() OVER( PARTITION BY  product_cd , CMPY_CD   ORDER BY source ) = 1)RSV
+
+ON FL.CMPY_CD=RSV.CMPY_CD AND FL.PRODUCT_CD=RSV.PRODUCT_CD
+
+left outer join (select distinct HOST_AGMT_NUM, PROD_NAME, AGMT_PROD_CVGE_LVL_DESC
+
+FROM DB_T_PROD_CORE.AGMT A
+
+JOIN DB_T_PROD_CORE.AGMT_PROD AP ON AP.AGMT_ID=A.AGMT_ID AND  AP.AGMT_PROD_ROLE_CD=''PLCYTYPE''
+
+JOIN DB_T_PROD_CORE.PROD PROD1 ON PROD1.PROD_ID=AP.PROD_ID
+
+WHERE AGMT_TYPE_CD=''PPV'' AND SRC_SYS_CD=''GWPC''
+
+AND EXTRACT( YEAR FROM A.TRANS_STRT_DTTM)*100+EXTRACT(MONTH FROM A.TRANS_STRT_DTTM )<=:WF_MONTH_ID
+
+
+  qualify row_number() over(partition by HOST_AGMT_NUM order by a.TRANS_END_DTTM desc, A.TRANS_STRT_DTTM DESC)=1
+) gw on gw.HOST_AGMT_NUM=PLCY_NBR
+
+
+
+WHERE FL.MO_ID=:WF_MONTH_ID
+
+GROUP BY  MO_ID,FL.CMPY_CD,FL.ST_CD,FL.PLCY_TYPE,
+
+RSV_GRP_new,
+
+  FL.LOB_CD,FL.PRODUCT_CD,product_DESC,ACCTNG_MO,ACCTNG_YR,PROD_PLAN_NEW,ACCTNG_QT,CAT,FL.POOL_CD,POOL_DESC,LOSS_MO,LOSS_YR,LOSS_QT,FL.ACCT_NBR,METRIC_LONG_NM,ACT.ACCT_DESC,  LEDGER, FL.ECTL_ORIG_INS_TS
+
+) SRC
+
+)
+);
+
+
+-- Component expr_passthrough, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE expr_passthrough AS
+(
+SELECT
+SQ_AGG_LOSS_INFO_QTD.MO_ID as MO_ID,
+SQ_AGG_LOSS_INFO_QTD.CMPY_CD as CMPY_CD,
+SQ_AGG_LOSS_INFO_QTD.ST_CD as ST_CD,
+SQ_AGG_LOSS_INFO_QTD.RSV_GRP as RSV_GRP,
+SQ_AGG_LOSS_INFO_QTD.LOB_CD as LOB_CD,
+SQ_AGG_LOSS_INFO_QTD.PRODUCT_CD as PRODUCT_CD,
+SQ_AGG_LOSS_INFO_QTD.PRODUCT_DESC as PRODUCT_DESC,
+SQ_AGG_LOSS_INFO_QTD.ACCTNG_MO as ACCTNG_MO,
+SQ_AGG_LOSS_INFO_QTD.ACCTNG_YR as ACCTNG_YR,
+SQ_AGG_LOSS_INFO_QTD.ACCTNG_QT as ACCTNG_QT,
+SQ_AGG_LOSS_INFO_QTD.CAT as CAT,
+SQ_AGG_LOSS_INFO_QTD.POOL_CD as POOL_CD,
+SQ_AGG_LOSS_INFO_QTD.POOL_DESC as POOL_DESC,
+SQ_AGG_LOSS_INFO_QTD.MONETARY_AMT as MONETARY_AMT,
+SQ_AGG_LOSS_INFO_QTD.LOSS_MO as LOSS_MO,
+SQ_AGG_LOSS_INFO_QTD.LOSS_YR as LOSS_YR,
+SQ_AGG_LOSS_INFO_QTD.LOSS_QT as LOSS_QT,
+SQ_AGG_LOSS_INFO_QTD.ACCT_NBR as ACCT_NBR,
+SQ_AGG_LOSS_INFO_QTD.GL_ACCT_DESC as GL_ACCT_DESC,
+SQ_AGG_LOSS_INFO_QTD.GL_ACCT_GRP as GL_ACCT_GRP,
+SQ_AGG_LOSS_INFO_QTD.LEDGER as LEDGER,
+SQ_AGG_LOSS_INFO_QTD.PLCY_TYPE as PLCY_TYPE,
+CASE WHEN SQ_AGG_LOSS_INFO_QTD.ECTL_ORIG_INS_TS IS NULL THEN TO_DATE ( ''01/01/1900'' , ''MM/DD/YYYY'' ) ELSE SQ_AGG_LOSS_INFO_QTD.ECTL_ORIG_INS_TS END as o_ECTL_ORIG_INS_TS,
+SQ_AGG_LOSS_INFO_QTD.PROD_PLAN as PROD_PLAN,
+SQ_AGG_LOSS_INFO_QTD.source_record_id
+FROM
+SQ_AGG_LOSS_INFO_QTD
+);
+
+
+-- Component tgt_AGG_LOSS_INFO_QTD, Type TARGET 
+INSERT INTO DB_T_CORE_FIN_PROD.AGG_LOSS_INFO_QTD
+(
+MO_ID,
+CMPY_CD,
+ST_CD,
+RSV_GRP,
+LOB_CD,
+PRODUCT_CD,
+PRODUCT_DESC,
+ACCTNG_MO,
+ACCTNG_YR,
+ACCTNG_QT,
+CAT,
+POOL_CD,
+POOL_DESC,
+MONETARY_AMT,
+LOSS_MO,
+LOSS_YR,
+LOSS_QT,
+ACCT_NBR,
+GL_ACCT_DESC,
+GL_ACCT_GRP,
+LEDGER,
+PLCY_TYPE,
+PROD_PLAN,
+ECTL_ORIG_INS_TS
+)
+SELECT
+expr_passthrough.MO_ID as MO_ID,
+expr_passthrough.CMPY_CD as CMPY_CD,
+expr_passthrough.ST_CD as ST_CD,
+expr_passthrough.RSV_GRP as RSV_GRP,
+expr_passthrough.LOB_CD as LOB_CD,
+expr_passthrough.PRODUCT_CD as PRODUCT_CD,
+expr_passthrough.PRODUCT_DESC as PRODUCT_DESC,
+expr_passthrough.ACCTNG_MO as ACCTNG_MO,
+expr_passthrough.ACCTNG_YR as ACCTNG_YR,
+expr_passthrough.ACCTNG_QT as ACCTNG_QT,
+expr_passthrough.CAT as CAT,
+expr_passthrough.POOL_CD as POOL_CD,
+expr_passthrough.POOL_DESC as POOL_DESC,
+expr_passthrough.MONETARY_AMT as MONETARY_AMT,
+expr_passthrough.LOSS_MO as LOSS_MO,
+expr_passthrough.LOSS_YR as LOSS_YR,
+expr_passthrough.LOSS_QT as LOSS_QT,
+expr_passthrough.ACCT_NBR as ACCT_NBR,
+expr_passthrough.GL_ACCT_DESC as GL_ACCT_DESC,
+expr_passthrough.GL_ACCT_GRP as GL_ACCT_GRP,
+expr_passthrough.LEDGER as LEDGER,
+expr_passthrough.PLCY_TYPE as PLCY_TYPE,
+expr_passthrough.PROD_PLAN as PROD_PLAN,
+expr_passthrough.o_ECTL_ORIG_INS_TS as ECTL_ORIG_INS_TS
+FROM
+expr_passthrough;
+
+
+END; ';

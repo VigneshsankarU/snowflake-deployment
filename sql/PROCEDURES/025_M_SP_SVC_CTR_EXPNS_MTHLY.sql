@@ -1,0 +1,60 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_SP_SVC_CTR_EXPNS_MTHLY("PARAM_JSON" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' 
+DECLARE
+  GL_MTH_END_DT STRING;
+BEGIN
+  SELECT 
+    TRY_PARSE_JSON(:param_json):GL_MTH_END_DT::STRING
+  INTO
+    GL_MTH_END_DT;
+
+
+-- Component SQ_shortcut_to_Dummy_SRC, Type TABLE_DDL Creating an empty table
+CREATE OR REPLACE TEMPORARY TABLE SQ_shortcut_to_Dummy
+(
+DUMMY varchar(19),
+source_record_id number autoincrement start 1 increment 1
+);
+
+
+-- Component SQ_shortcut_to_Dummy_SRC, Type IMPORT_DATA Importing Data
+;
+
+
+-- Component exp_EOM_PARAM, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_EOM_PARAM AS
+(
+SELECT
+:GL_MTH_END_DT as EOM,
+SQ_shortcut_to_Dummy.source_record_id
+FROM
+SQ_shortcut_to_Dummy
+);
+
+
+-- Component SP_SVC_CTR_EXPNS, Type STORED_PROCEDURE 
+CREATE OR REPLACE TEMPORARY TABLE SP_SVC_CTR_EXPNS AS
+(
+    SELECT * FROM TABLE(SP_SVC_CTR_EXPNS())
+);
+
+
+-- Component DUMMY_FILE, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE DUMMY_FILE AS
+(
+SELECT
+SP_SVC_CTR_EXPNS.EOMDATE as DUMMY_COL2
+FROM
+SP_SVC_CTR_EXPNS
+);
+
+
+-- Component DUMMY_FILE, Type EXPORT_DATA Exporting data
+;
+
+
+END; ';

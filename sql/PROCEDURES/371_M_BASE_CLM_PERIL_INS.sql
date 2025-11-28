@@ -1,0 +1,376 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_BASE_CLM_PERIL_INS("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' DECLARE start_dttm TIMESTAMP;
+end_dttm TIMESTAMP;
+PRCS_ID INTEGER;
+FS_DATE date;
+BEGIN 
+start_dttm := CURRENT_TIMESTAMP();
+end_dttm := CURRENT_TIMESTAMP();
+PRCS_ID := 1;   
+
+-- Component LKP_TERADATA_ETL_REF_XLAT_CLM_SRC_CD, Type Prerequisite Lookup Object 
+CREATE OR REPLACE TEMPORARY TABLE LKP_TERADATA_ETL_REF_XLAT_CLM_SRC_CD AS
+(
+SELECT 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL as TGT_IDNTFTN_VAL
+
+	,TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_VAL as SRC_IDNTFTN_VAL , row_number() over (order by 1) source_record_id
+
+FROM 
+
+	DB_T_PROD_CORE.TERADATA_ETL_REF_XLAT
+
+WHERE 
+
+	TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_NM= ''SRC_SYS''
+
+             AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_NM= ''derived''
+
+		AND TERADATA_ETL_REF_XLAT.SRC_IDNTFTN_SYS= ''DS''
+
+		AND TERADATA_ETL_REF_XLAT.EXPN_DT=''9999-12-31''
+);
+
+
+-- Component sq_cc_claim, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE sq_cc_claim AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as ClaimNumber,
+$2 as TYPECODE,
+$3 as CLM_SRC_CD,
+$4 as Retired,
+$5 as updatetime,
+$6 as Rnk,
+$7 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT	
+
+cc_claim.claimnumber_stg,
+
+cctl_losscause.typecode_stg,
+
+''SRC_SYS6'' AS clm_src_cd,
+
+cc_claim.retired_stg,
+
+cc_claim.updatetime_stg,
+
+Rank()  OVER(PARTITION BY cc_claim.ClaimNumber_stg  ORDER BY cc_claim.updatetime_stg )  AS rnk 
+
+FROM DB_T_PROD_STAG.cc_claim 
+
+INNER JOIN DB_T_PROD_STAG.cctl_claimstate ON	cc_claim.State_stg= cctl_claimstate.id_stg 
+
+INNER JOIN DB_T_PROD_STAG.cctl_losscause ON cc_claim.losscause_stg = cctl_losscause.id_stg
+
+WHERE cctl_claimstate.name_stg <> ''Draft'' 
+
+AND cc_claim.UpdateTime_stg>(:start_dttm) 
+
+AND	cc_claim.UpdateTime_stg <= (:end_dttm)
+) SRC
+)
+);
+
+
+-- Component exp_check_typcode_null, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_check_typcode_null AS
+(
+SELECT
+sq_cc_claim.ClaimNumber as ClaimNumber,
+CASE WHEN sq_cc_claim.TYPECODE IS NULL or sq_cc_claim.TYPECODE = '''' THEN ''UNK'' ELSE sq_cc_claim.TYPECODE END as TYPECODE_OUT,
+LKP_1.TGT_IDNTFTN_VAL /* replaced lookup LKP_TERADATA_ETL_REF_XLAT_CLM_SRC_CD */ as out_CLM_SRC_CD,
+sq_cc_claim.Retired as Retired,
+sq_cc_claim.updatetime as updatetime,
+sq_cc_claim.Rnk as Rnk,
+sq_cc_claim.source_record_id,
+row_number() over (partition by sq_cc_claim.source_record_id order by sq_cc_claim.source_record_id) as RNK1
+FROM
+sq_cc_claim
+LEFT JOIN LKP_TERADATA_ETL_REF_XLAT_CLM_SRC_CD LKP_1 ON LKP_1.SRC_IDNTFTN_VAL = sq_cc_claim.CLM_SRC_CD
+QUALIFY RNK1 = 1
+);
+
+
+-- Component LKP_CLM, Type LOOKUP 
+CREATE OR REPLACE TEMPORARY TABLE LKP_CLM AS
+(
+SELECT
+LKP.CLM_ID,
+exp_check_typcode_null.source_record_id,
+ROW_NUMBER() OVER(PARTITION BY exp_check_typcode_null.source_record_id ORDER BY LKP.CLM_ID desc,LKP.CLM_TYPE_CD desc,LKP.CLM_MDIA_TYPE_CD desc,LKP.CLM_SUBMTL_TYPE_CD desc,LKP.ACDNT_TYPE_CD desc,LKP.CLM_CTGY_TYPE_CD desc,LKP.ADDL_INSRNC_PLN_IND desc,LKP.EMPLMT_RLTD_IND desc,LKP.ATTNY_INVLVMT_IND desc,LKP.CLM_NUM desc,LKP.CLM_PRIR_IND desc,LKP.PMT_MODE_CD desc,LKP.CLM_OBLGTN_TYPE_CD desc,LKP.SUBRGTN_ELGBL_CD desc,LKP.SUBRGTN_ELGBLY_RSN_CD desc,LKP.CURY_CD desc,LKP.INCDT_EV_ID desc,LKP.INSRD_AT_FAULT_IND desc,LKP.CVGE_IN_QUES_IND desc,LKP.EXTNT_OF_FIRE_DMG_TYPE_CD desc,LKP.VFYD_CLM_IND desc,LKP.PRCS_ID desc,LKP.CLM_STRT_DTTM desc,LKP.CLM_END_DTTM desc,LKP.EDW_STRT_DTTM desc,LKP.EDW_END_DTTM desc,LKP.SRC_SYS_CD desc,LKP.TRANS_STRT_DTTM desc,LKP.LGCY_CLM_NUM desc) RNK
+FROM
+exp_check_typcode_null
+LEFT JOIN (
+SELECT CLM.CLM_ID as CLM_ID, CLM.CLM_TYPE_CD as CLM_TYPE_CD, CLM.CLM_MDIA_TYPE_CD as CLM_MDIA_TYPE_CD, CLM.CLM_SUBMTL_TYPE_CD as CLM_SUBMTL_TYPE_CD, CLM.ACDNT_TYPE_CD as ACDNT_TYPE_CD, CLM.CLM_CTGY_TYPE_CD as CLM_CTGY_TYPE_CD, CLM.ADDL_INSRNC_PLN_IND as ADDL_INSRNC_PLN_IND, CLM.EMPLMT_RLTD_IND as EMPLMT_RLTD_IND, CLM.ATTNY_INVLVMT_IND as ATTNY_INVLVMT_IND, CLM.CLM_PRIR_IND as CLM_PRIR_IND, CLM.PMT_MODE_CD as PMT_MODE_CD, CLM.CLM_OBLGTN_TYPE_CD as CLM_OBLGTN_TYPE_CD, CLM.SUBRGTN_ELGBL_CD as SUBRGTN_ELGBL_CD, CLM.SUBRGTN_ELGBLY_RSN_CD as SUBRGTN_ELGBLY_RSN_CD, CLM.CURY_CD as CURY_CD, CLM.INCDT_EV_ID as INCDT_EV_ID, CLM.INSRD_AT_FAULT_IND as INSRD_AT_FAULT_IND, CLM.CVGE_IN_QUES_IND as CVGE_IN_QUES_IND, CLM.EXTNT_OF_FIRE_DMG_TYPE_CD as EXTNT_OF_FIRE_DMG_TYPE_CD, CLM.VFYD_CLM_IND as VFYD_CLM_IND, CLM.PRCS_ID as PRCS_ID, CLM.CLM_STRT_DTTM as CLM_STRT_DTTM, CLM.CLM_END_DTTM as CLM_END_DTTM, CLM.EDW_STRT_DTTM as EDW_STRT_DTTM, CLM.EDW_END_DTTM as EDW_END_DTTM, CLM.TRANS_STRT_DTTM as TRANS_STRT_DTTM, CLM.LGCY_CLM_NUM as LGCY_CLM_NUM, CLM.CLM_NUM as CLM_NUM, CLM.SRC_SYS_CD as SRC_SYS_CD FROM DB_T_PROD_CORE.CLM  QUALIFY ROW_NUMBER() OVER(PARTITION BY CLM.CLM_NUM,CLM.SRC_SYS_CD  ORDER BY CLM.EDW_END_DTTM desc) = 1
+) LKP ON LKP.CLM_NUM = exp_check_typcode_null.ClaimNumber AND LKP.SRC_SYS_CD = exp_check_typcode_null.out_CLM_SRC_CD
+QUALIFY RNK = 1
+);
+
+
+-- Component exp_pass_through, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_through AS
+(
+SELECT
+LKP_CLM.CLM_ID as CLM_ID,
+exp_check_typcode_null.TYPECODE_OUT as TYPECODE,
+CURRENT_TIMESTAMP as EDW_STRT_DTTM,
+TO_TIMESTAMP ( ''12/31/9999 23:59:59.999999'' , ''MM/DD/YYYY HH24:MI:SS.FF6'' ) as EDW_END_DTTM,
+exp_check_typcode_null.Retired as Retired,
+exp_check_typcode_null.updatetime as updatetime,
+exp_check_typcode_null.Rnk as Rnk,
+exp_check_typcode_null.source_record_id
+FROM
+exp_check_typcode_null
+INNER JOIN LKP_CLM ON exp_check_typcode_null.source_record_id = LKP_CLM.source_record_id
+);
+
+
+-- Component LKP_CLM_PERIL, Type LOOKUP 
+CREATE OR REPLACE TEMPORARY TABLE LKP_CLM_PERIL AS
+(
+SELECT
+LKP.CLM_ID,
+LKP.PERIL_TYPE_CD,
+LKP.EDW_END_DTTM,
+exp_pass_through.source_record_id,
+ROW_NUMBER() OVER(PARTITION BY exp_pass_through.source_record_id ORDER BY LKP.CLM_ID asc,LKP.PERIL_TYPE_CD asc,LKP.EDW_END_DTTM asc) RNK
+FROM
+exp_pass_through
+LEFT JOIN (
+SELECT  CLM_PERIL.EDW_END_DTTM as EDW_END_DTTM, CLM_PERIL.CLM_ID as CLM_ID, CLM_PERIL.PERIL_TYPE_CD as PERIL_TYPE_CD FROM DB_T_PROD_CORE.CLM_PERIL QUALIFY ROW_NUMBER() OVER(PARTITION BY CLM_ID ORDER BY EDW_END_DTTM desc) = 1
+) LKP ON LKP.CLM_ID = exp_pass_through.CLM_ID
+QUALIFY RNK = 1
+);
+
+
+-- Component EXPTRANS2, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE EXPTRANS2 AS
+(
+SELECT
+CASE WHEN LKP_TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL IS NULL THEN ''UNK'' ELSE LKP_TERADATA_ETL_REF_XLAT.TGT_IDNTFTN_VAL END as type_code,
+exp_pass_through.updatetime as updatetime,
+exp_pass_through.Rnk as Rnk,
+exp_pass_through.source_record_id
+FROM
+exp_pass_through
+INNER JOIN LKP_TERADATA_ETL_REF_XLAT_CLM_SRC_CD LKP_TERADATA_ETL_REF_XLAT ON exp_pass_through.source_record_id = LKP_TERADATA_ETL_REF_XLAT.source_record_id
+);
+
+
+-- Component exp_check_flag, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_check_flag AS
+(
+SELECT
+exp_pass_through.CLM_ID as CLM_ID,
+EXPTRANS2.type_code as TYPECODE,
+md5 ( LKP_CLM_PERIL.PERIL_TYPE_CD ) as LKP_MD5,
+md5 ( EXPTRANS2.type_code ) as SRC_MD5,
+CASE WHEN LKP_MD5 IS NULL THEN ''I'' ELSE CASE WHEN LKP_MD5 != SRC_MD5 THEN ''U'' ELSE ''R'' END END as o_flag,
+:PRCS_ID as PRCS_ID,
+exp_pass_through.EDW_STRT_DTTM as EDW_STRT_DTTM,
+exp_pass_through.EDW_END_DTTM as EDW_END_DTTM,
+exp_pass_through.Retired as Retired,
+LKP_CLM_PERIL.EDW_END_DTTM as lkp_EDW_END_DTTM,
+NULL as lkp_TRANS_STRT_DTTM,
+exp_pass_through.source_record_id
+FROM
+exp_pass_through
+INNER JOIN LKP_CLM_PERIL ON exp_pass_through.source_record_id = LKP_CLM_PERIL.source_record_id
+INNER JOIN EXPTRANS2 ON LKP_CLM_PERIL.source_record_id = EXPTRANS2.source_record_id
+);
+
+
+-- Component RTRTRANS_INSERT, Type ROUTER Output Group INSERT
+CREATE OR REPLACE TEMPORARY TABLE RTRTRANS_INSERT AS
+(SELECT
+exp_check_flag.CLM_ID as CLM_ID,
+exp_check_flag.TYPECODE as out_TYPECODE,
+exp_check_flag.PRCS_ID as PRCS_ID,
+exp_check_flag.EDW_STRT_DTTM as EDW_STRT_DTTM,
+exp_check_flag.EDW_END_DTTM as EDW_END_DTTM,
+exp_check_flag.o_flag as o_flag,
+exp_check_flag.Retired as Retired,
+exp_check_flag.lkp_EDW_END_DTTM as lkp_EDW_END_DTTM,
+EXPTRANS2.updatetime as updatetime,
+exp_check_flag.lkp_TRANS_STRT_DTTM as lkp_TRANS_STRT_DTTM,
+EXPTRANS2.Rnk as Rnk,
+EXPTRANS2.source_record_id
+FROM
+EXPTRANS2
+LEFT JOIN exp_check_flag ON EXPTRANS2.source_record_id = exp_check_flag.source_record_id
+WHERE exp_check_flag.o_flag = ''I'' OR exp_check_flag.o_flag = ''U'' OR ( exp_check_flag.lkp_EDW_END_DTTM != TO_TIMESTAMP ( ''12/31/9999 23:59:59.999999'' , ''MM/DD/YYYY HH24:MI:SS.FF6'' ) and exp_check_flag.Retired = 0 ));
+
+
+-- Component RTRTRANS_RETIRED, Type ROUTER Output Group RETIRED
+CREATE OR REPLACE TEMPORARY TABLE RTRTRANS_RETIRED AS
+(SELECT
+exp_check_flag.CLM_ID as CLM_ID,
+exp_check_flag.TYPECODE as out_TYPECODE,
+exp_check_flag.PRCS_ID as PRCS_ID,
+exp_check_flag.EDW_STRT_DTTM as EDW_STRT_DTTM,
+exp_check_flag.EDW_END_DTTM as EDW_END_DTTM,
+exp_check_flag.o_flag as o_flag,
+exp_check_flag.Retired as Retired,
+exp_check_flag.lkp_EDW_END_DTTM as lkp_EDW_END_DTTM,
+EXPTRANS2.updatetime as updatetime,
+exp_check_flag.lkp_TRANS_STRT_DTTM as lkp_TRANS_STRT_DTTM,
+EXPTRANS2.Rnk as Rnk,
+EXPTRANS2.source_record_id
+FROM
+EXPTRANS2
+LEFT JOIN exp_check_flag ON EXPTRANS2.source_record_id = exp_check_flag.source_record_id
+WHERE exp_check_flag.o_flag = ''R'' and exp_check_flag.Retired != 0 and exp_check_flag.lkp_EDW_END_DTTM = TO_TIMESTAMP ( ''12/31/9999 23:59:59.999999'' , ''MM/DD/YYYY HH24:MI:SS.FF6'' ));
+
+
+-- Component EXPTRANS, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE EXPTRANS AS
+(
+SELECT
+RTRTRANS_INSERT.CLM_ID as CLM_ID1,
+RTRTRANS_INSERT.out_TYPECODE as out_TYPECODE1,
+RTRTRANS_INSERT.PRCS_ID as PRCS_ID1,
+CASE WHEN RTRTRANS_INSERT.Retired = 0 THEN RTRTRANS_INSERT.EDW_END_DTTM ELSE CURRENT_TIMESTAMP END as EDW_END_DTTM11,
+RTRTRANS_INSERT.updatetime as updatetime1,
+CASE WHEN RTRTRANS_INSERT.Retired != 0 THEN RTRTRANS_INSERT.updatetime ELSE TO_TIMESTAMP ( ''9999-12-31 23:59:59.999999'' , ''YYYY-MM-DD HH24:MI:SS.FF6'' ) END as TRANS_END_DTTM,
+DATEADD (
+  SECOND,
+  (2 * (RTRTRANS_INSERT.Rnk - 1)),
+  RTRTRANS_INSERT.EDW_STRT_DTTM
+) as out_EDW_STRT_DTTM1,
+RTRTRANS_INSERT.source_record_id
+FROM
+RTRTRANS_INSERT
+);
+
+
+-- Component UPDTRANS, Type UPDATE 
+CREATE OR REPLACE TEMPORARY TABLE UPDTRANS AS
+(
+/* UPDATE_STRATEGY_ACTION = 0 FOR INSERT / UPDATE_STRATEGY_ACTION = 1 FOR UPDATE / UPDATE_STRATEGY_ACTION = 2 FOR DELETE / UPDATE_STRATEGY_ACTION = 3 FOR REJECT */
+SELECT
+RTRTRANS_RETIRED.CLM_ID as CLM_ID3,
+RTRTRANS_RETIRED.out_TYPECODE as out_TYPECODE3,
+RTRTRANS_RETIRED.PRCS_ID as PRCS_ID3,
+RTRTRANS_RETIRED.updatetime as updatetime3,
+1 as UPDATE_STRATEGY_ACTION,
+RTRTRANS_RETIRED.source_record_id
+FROM
+RTRTRANS_RETIRED
+);
+
+
+-- Component EXPTRANS1, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE EXPTRANS1 AS
+(
+SELECT
+UPDTRANS.CLM_ID3 as CLM_ID1,
+UPDTRANS.out_TYPECODE3 as out_TYPECODE1,
+CURRENT_TIMESTAMP as EDW_END_DTTM11,
+UPDTRANS.updatetime3 as updatetime3,
+UPDTRANS.source_record_id
+FROM
+UPDTRANS
+);
+
+
+-- Component tgt_clm_peril_ins, Type TARGET 
+INSERT INTO DB_T_PROD_CORE.CLM_PERIL
+(
+CLM_ID,
+PERIL_TYPE_CD,
+PRCS_ID,
+EDW_STRT_DTTM,
+EDW_END_DTTM,
+TRANS_STRT_DTTM,
+TRANS_END_DTTM
+)
+SELECT
+EXPTRANS.CLM_ID1 as CLM_ID,
+EXPTRANS.out_TYPECODE1 as PERIL_TYPE_CD,
+EXPTRANS.PRCS_ID1 as PRCS_ID,
+EXPTRANS.out_EDW_STRT_DTTM1 as EDW_STRT_DTTM,
+EXPTRANS.EDW_END_DTTM11 as EDW_END_DTTM,
+EXPTRANS.updatetime1 as TRANS_STRT_DTTM,
+EXPTRANS.TRANS_END_DTTM as TRANS_END_DTTM
+FROM
+EXPTRANS;
+
+
+-- Component tgt_clm_peril_ins, Type Post SQL 
+/*
+
+UPDATE  DB_T_PROD_CORE.CLM_PERIL  FROM  
+
+(
+
+SELECT	distinct CLM_ID,EDW_STRT_DTTM
+
+FROM DB_T_PROD_CORE.CLM_PERIL  where   EDW_END_DTTM=TO_TIMESTAMP(''12/31/9999 23:59:59.999999'',''MM/DD/YYYY HH24:MI:SS.FF6'')
+
+QUALIFY ROW_NUMBER() OVER(PARTITION BY CLM_ID  ORDER BY EDW_STRT_DTTM DESC) >1
+
+)  A
+
+SET EDW_END_DTTM= A.EDW_STRT_DTTM+ INTERVAL ''1'' SECOND
+
+WHERE  CLM_PERIL.CLM_ID=A.CLM_ID
+
+AND  CLM_PERIL.EDW_STRT_DTTM=A.EDW_STRT_DTTM
+
+AND CLM_PERIL.EDW_END_DTTM=TO_TIMESTAMP(''12/31/9999 23:59:59.999999'',''MM/DD/YYYY HH24:MI:SS.FF6'');
+
+*/
+
+
+
+UPDATE  DB_T_PROD_CORE.CLM_PERIL  FROM  
+
+(
+
+SELECT	distinct CLM_ID,EDW_STRT_DTTM,
+
+max(EDW_STRT_DTTM) over (partition by CLM_ID ORDER BY EDW_STRT_DTTM ASC rows between 1 following and 1 following) - INTERVAL ''1 SECOND'' 
+
+ as lead1, 
+
+max(TRANS_STRT_DTTM) over (partition by CLM_ID ORDER BY EDW_STRT_DTTM ASC rows between 1 following and 1 following) - INTERVAL ''1 SECOND'' 
+
+ as lead
+
+FROM DB_T_PROD_CORE.CLM_PERIL 
+
+)  A
+
+set TRANS_END_DTTM=  A.lead, 
+
+EDW_END_DTTM=A.lead1
+
+where  CLM_PERIL.EDW_STRT_DTTM = A.EDW_STRT_DTTM
+
+and CLM_PERIL.CLM_ID=A.CLM_ID
+
+and CLM_PERIL.TRANS_STRT_DTTM <>CLM_PERIL.TRANS_END_DTTM
+
+and lead is not null;
+
+
+-- Component tgt_clm_peril_ins1, Type TARGET 
+MERGE INTO DB_T_PROD_CORE.CLM_PERIL
+USING EXPTRANS1 ON (CLM_PERIL.CLM_ID = EXPTRANS1.CLM_ID1 AND CLM_PERIL.PERIL_TYPE_CD = EXPTRANS1.out_TYPECODE1)
+WHEN MATCHED THEN UPDATE
+SET
+CLM_ID = EXPTRANS1.CLM_ID1,
+PERIL_TYPE_CD = EXPTRANS1.out_TYPECODE1,
+EDW_END_DTTM = EXPTRANS1.EDW_END_DTTM11,
+TRANS_END_DTTM = EXPTRANS1.updatetime3;
+
+
+END; ';

@@ -1,0 +1,81 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_STAG_AGT_FIRE("PARAM_JSON" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' 
+DECLARE
+  PRCS_ID STRING;
+BEGIN
+  SELECT 
+    TRY_PARSE_JSON(:param_json):PRCS_ID::STRING
+  INTO
+    PRCS_ID;
+
+-- Component SQ_AGT_FIRE, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_AGT_FIRE AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as AGENT_NBR,
+$2 as DISTRICT,
+$3 as REGION,
+$4 as APP_YEAR,
+$5 as APP_MONTH,
+$6 as APPS_A,
+$7 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT
+AGT_FIRE.AGENT_NBR,
+AGT_FIRE.DISTRICT,
+AGT_FIRE.REGION,
+AGT_FIRE.APP_YEAR,
+AGT_FIRE.APP_MONTH,
+AGT_FIRE.APPS_A
+FROM DB_T_PROD_STAG.AGT_FIRE
+) SRC
+)
+);
+
+
+-- Component exp_pass_through, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_pass_through AS
+(
+SELECT
+SQ_AGT_FIRE.AGENT_NBR as AGENT_NBR,
+SQ_AGT_FIRE.DISTRICT as DISTRICT,
+SQ_AGT_FIRE.REGION as REGION,
+SQ_AGT_FIRE.APP_YEAR as APP_YEAR,
+SQ_AGT_FIRE.APP_MONTH as APP_MONTH,
+SQ_AGT_FIRE.APPS_A as APPS_A,
+:PRCS_ID as PROCESS_ID,
+SQ_AGT_FIRE.source_record_id
+FROM
+SQ_AGT_FIRE
+);
+
+
+-- Component agt_fire, Type TARGET 
+INSERT INTO DB_T_PROD_STAG.agt_fire
+(
+AGENT_NBR,
+DISTRICT,
+REGION,
+APP_YEAR,
+APP_MONTH,
+APPS_F,
+PRCS_ID
+)
+SELECT
+exp_pass_through.AGENT_NBR as AGENT_NBR,
+exp_pass_through.DISTRICT as DISTRICT,
+exp_pass_through.REGION as REGION,
+exp_pass_through.APP_YEAR as APP_YEAR,
+exp_pass_through.APP_MONTH as APP_MONTH,
+exp_pass_through.APPS_A as APPS_F,
+exp_pass_through.PROCESS_ID as PRCS_ID
+FROM
+exp_pass_through;
+
+
+END; ';

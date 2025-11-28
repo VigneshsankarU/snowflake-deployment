@@ -1,0 +1,79 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_BIBASE_WR_MULTILINE_METRICS_DTL_MAX_TIMESTAMP("PARAM_JSON" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' 
+DECLARE
+  PMWorkflowName STRING;
+  PMSessionName STRING;
+BEGIN
+  SELECT 
+    TRY_PARSE_JSON(:param_json):PMWorkflowName::STRING,
+    ''s_m_bibase_wr_multiline_metrics_dtl_max_timestamp''
+  INTO
+    PMWorkflowName,
+    PMSessionName;
+
+-- Component SQ_WR_MULTILINE_METRICS_DTL, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_WR_MULTILINE_METRICS_DTL AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as MAX_CALENDAR_DATE,
+$2 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT Max(CALENDAR_DATE) AS MAX_CALENDAR_DATE
+
+FROM DB_V_PROD_ACT.WR_MULTILINE_METRICS_DTL
+) SRC
+)
+);
+
+
+-- Component EXP_PARAM_DATE, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE EXP_PARAM_DATE AS
+(
+SELECT
+TO_CHAR ( DATE_TRUNC(''YY'', DATEADD(''YYYY'', - 1, TO_DATE ( TO_CHAR ( SQ_WR_MULTILINE_METRICS_DTL.MAX_CALENDAR_DATE , ''YYYY/MM/DD'' ) , ''YYYY/MM/DD'' ))) , ''YYYY-MM-DD'' ) as v_Report_Start_Date,
+TO_CHAR ( SQ_WR_MULTILINE_METRICS_DTL.MAX_CALENDAR_DATE , ''YYYY-MM-DD'' ) as v_Report_End_Date,
+''_'' || TO_CHAR ( SQ_WR_MULTILINE_METRICS_DTL.MAX_CALENDAR_DATE , ''yyyymm'' ) as v_date_postfix,
+''[global]'' || CHR ( 10 ) as GLOBAL,
+''$PMMergeSessParamFile=TRUE'' || CHR ( 10 ) as SESSION,
+''$Report_Start_Date='' || CHR ( 39 ) || v_Report_Start_Date || CHR ( 39 ) as Report_Start_Date,
+''$Report_End_Date='' || CHR ( 39 ) || v_Report_End_Date || CHR ( 39 ) as Report_End_Date,
+v_date_postfix as set_var,
+SQ_WR_MULTILINE_METRICS_DTL.source_record_id
+FROM
+SQ_WR_MULTILINE_METRICS_DTL
+);
+
+
+-- Component NORM_SRC_PARAM_VALUE, Type NORMALIZER 
+CREATE OR REPLACE TEMPORARY TABLE NORM_SRC_PARAM_VALUE AS
+(
+  SELECT ''REC1'' AS REC_NO, EXP_PARAM_DATE.source_record_id, GLOBAL AS PARAMETER FROM EXP_PARAM_DATE
+  UNION ALL
+  SELECT ''REC2'' AS REC_NO, EXP_PARAM_DATE.source_record_id, SESSION AS PARAMETER FROM EXP_PARAM_DATE
+  UNION ALL
+  SELECT ''REC3'' AS REC_NO, EXP_PARAM_DATE.source_record_id, Report_Start_Date AS PARAMETER FROM EXP_PARAM_DATE
+  UNION ALL
+  SELECT ''REC4'' AS REC_NO, EXP_PARAM_DATE.source_record_id, Report_End_Date AS PARAMETER FROM EXP_PARAM_DATE
+);
+
+
+-- Component EDW_RENEWAL_FORECAST_EXTRACT_PARAM, Type TARGET_EXPORT_PREPARE Stage data before exporting
+CREATE OR REPLACE TEMPORARY TABLE EDW_RENEWAL_FORECAST_EXTRACT_PARAM AS
+(
+SELECT
+NORM_SRC_PARAM_VALUE.PARAMETER as Report_Date
+FROM
+NORM_SRC_PARAM_VALUE
+);
+
+
+-- Component EDW_RENEWAL_FORECAST_EXTRACT_PARAM, Type EXPORT_DATA Exporting data
+;
+
+
+END; ';

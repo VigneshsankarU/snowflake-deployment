@@ -1,0 +1,310 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_MEMBER_ADDRESS("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' 
+
+declare
+TABLE_NAME STRING;
+PROJECT_ID INT;
+BATCH_ACTIVE_IND STRING;
+PMMappingName STRING;
+BEGIN 
+TABLE_NAME := ''MEMBER_ADDRESS'';
+PROJECT_ID := 4;
+BATCH_ACTIVE_IND := ''Y'';
+PMMappingName := ''m_member_address'';
+
+-- Component SQ_Shortcut_to_STG_FED_MSTR_DELTA, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_Shortcut_to_STG_FED_MSTR_DELTA AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as MEMBER_NBR,
+$2 as ADDRESS_1,
+$3 as ADDRESS_2,
+$4 as CITY,
+$5 as STATE,
+$6 as ZIP_CODE,
+$7 as TX_CD,
+$8 as FEED_DT,
+$9 as FEED_IND,
+$10 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT STG_FED_MSTR_DELTA.MEMBER_NBR, 
+
+STG_FED_MSTR_DELTA.ADDRESS_1, 
+
+STG_FED_MSTR_DELTA.ADDRESS_2, 
+
+STG_FED_MSTR_DELTA.CITY, 
+
+STG_FED_MSTR_DELTA.STATE, 
+
+STG_FED_MSTR_DELTA.ZIP_CODE, 
+
+STG_FED_MSTR_DELTA.TX_CD, 
+
+STG_FED_MSTR_TRG.FEED_DT, 
+
+STG_FED_MSTR_TRG.FEED_IND 
+
+FROM
+
+DB_T_STAG_PROD.STG_FED_MSTR_DELTA, DB_T_STAG_PROD.STG_FED_MSTR_TRG
+
+WHERE TX_CD <> ''DEL''
+) SRC
+)
+);
+
+
+-- Component exp_Delta_Trg, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_Delta_Trg AS
+(
+SELECT
+SQ_Shortcut_to_STG_FED_MSTR_DELTA.MEMBER_NBR as MEMBER_NBR,
+ltrim ( rtrim ( SQ_Shortcut_to_STG_FED_MSTR_DELTA.ADDRESS_1 ) ) as out_Address_1,
+ltrim ( rtrim ( SQ_Shortcut_to_STG_FED_MSTR_DELTA.ADDRESS_2 ) ) as out_Address_2,
+ltrim ( rtrim ( SQ_Shortcut_to_STG_FED_MSTR_DELTA.CITY ) ) as out_CITY,
+ltrim ( rtrim ( SQ_Shortcut_to_STG_FED_MSTR_DELTA.STATE ) ) as out_STATE,
+ltrim ( rtrim ( to_char ( SQ_Shortcut_to_STG_FED_MSTR_DELTA.ZIP_CODE ) ) ) as out_ZIP_CODE,
+SQ_Shortcut_to_STG_FED_MSTR_DELTA.TX_CD as TX_CD,
+SQ_Shortcut_to_STG_FED_MSTR_DELTA.FEED_DT as FEED_DT,
+:BATCH_ACTIVE_IND as BATCH_ACTIVE_IND,
+:PROJECT_ID as PROJECT_ID,
+:PMMappingName as PROGRAM_NM,
+:TABLE_NAME as TABLE_NAME,
+SQ_Shortcut_to_STG_FED_MSTR_DELTA.FEED_IND as FEED_IND,
+SQ_Shortcut_to_STG_FED_MSTR_DELTA.source_record_id
+FROM
+SQ_Shortcut_to_STG_FED_MSTR_DELTA
+);
+
+
+-- Component m_lkp_Control_Tables, Type MAPPLET 
+--MAPPLET NOT REGISTERED: m_lkp_Control_Tables, mapplet instance m_lkp_Control_Tables;
+call m_lkp_Control_Tables(''exp_Delta_Trg'');
+
+-- Component LKP_ADDRESS, Type LOOKUP 
+CREATE OR REPLACE TEMPORARY TABLE LKP_ADDRESS AS
+(
+SELECT
+LKP.DW_ADDR_SKEY,
+exp_Delta_Trg.source_record_id,
+ROW_NUMBER() OVER(PARTITION BY exp_Delta_Trg.source_record_id ORDER BY LKP.DW_ADDR_SKEY asc) RNK
+FROM
+exp_Delta_Trg
+LEFT JOIN (
+SELECT DW_ADDR_SKEY as DW_ADDR_SKEY, 
+Trim(ADDR_LINE_1) as ADDR_LINE_1, 
+Trim(ADDR_LINE_2) as ADDR_LINE_2, 
+Trim(CITY) as CITY, 
+Trim(ST_CD) as ST_CD, 
+Trim(ZIP_CD) as ZIP_CD 
+FROM db_t_core_prod.ADDRESS
+) LKP ON LKP.ADDR_LINE_1 = exp_Delta_Trg.out_Address_1 AND LKP.ADDR_LINE_2 = exp_Delta_Trg.out_Address_2 AND LKP.CITY = exp_Delta_Trg.out_CITY AND LKP.ST_CD = exp_Delta_Trg.out_STATE AND LKP.ZIP_CD = exp_Delta_Trg.out_ZIP_CODE
+QUALIFY RNK = 1
+);
+
+
+-- Component LKP_MEMBER_MSTR, Type LOOKUP 
+CREATE OR REPLACE TEMPORARY TABLE LKP_MEMBER_MSTR AS
+(
+SELECT
+LKP.MEMB_SKEY,
+LKP.MEMB_EFF_DT,
+exp_Delta_Trg.source_record_id,
+ROW_NUMBER() OVER(PARTITION BY exp_Delta_Trg.source_record_id ORDER BY LKP.MEMB_SKEY asc,LKP.MEMB_NUM asc,LKP.MEMB_EFF_DT asc,LKP.MEMB_EXP_DT asc,LKP.MEMB_EMAIL asc,LKP.MEMB_PHONE asc,LKP.ECTL_INS_BATCH_ID asc,LKP.ECTL_UPD_BATCH_ID asc,LKP.ECTL_INS_PRGM_ID asc,LKP.ECTL_UPD_PRGM_ID asc) RNK
+FROM
+exp_Delta_Trg
+LEFT JOIN (
+SELECT MEMBER_MSTR.MEMB_SKEY as MEMB_SKEY, 
+MEMBER_MSTR.MEMB_NUM as MEMB_NUM, 
+MEMBER_MSTR.MEMB_EFF_DT as MEMB_EFF_DT, 
+MEMBER_MSTR.MEMB_EXP_DT as MEMB_EXP_DT, 
+MEMBER_MSTR.MEMB_EMAIL as MEMB_EMAIL, 
+MEMBER_MSTR.MEMB_PHONE as MEMB_PHONE, 
+MEMBER_MSTR.ECTL_INS_BATCH_ID as ECTL_INS_BATCH_ID, MEMBER_MSTR.ECTL_UPD_BATCH_ID as ECTL_UPD_BATCH_ID, MEMBER_MSTR.ECTL_INS_PRGM_ID as ECTL_INS_PRGM_ID,
+MEMBER_MSTR.ECTL_UPD_PRGM_ID as ECTL_UPD_PRGM_ID
+FROM db_t_core_prod.MEMBER_MSTR
+WHERE MEMB_EXP_DT = ''9999-12-31''
+) LKP ON LKP.MEMB_NUM = exp_Delta_Trg.MEMBER_NBR
+QUALIFY RNK = 1
+);
+
+
+-- Component LKP_MEMBER_ADDRESS, Type LOOKUP 
+CREATE OR REPLACE TEMPORARY TABLE LKP_MEMBER_ADDRESS AS
+(
+SELECT
+LKP.MEMB_SKEY,
+LKP.ADDR_SKEY,
+LKP.ADDR_EFF_DT,
+LKP_MEMBER_MSTR.source_record_id,
+ROW_NUMBER() OVER(PARTITION BY LKP_MEMBER_MSTR.source_record_id ORDER BY LKP.MEMB_SKEY asc,LKP.ADDR_SKEY asc,LKP.ADDR_EFF_DT asc) RNK
+FROM
+LKP_MEMBER_MSTR
+LEFT JOIN (
+SELECT  MEMBER_ADDRESS.MEMB_SKEY as MEMB_SKEY, 
+MEMBER_ADDRESS.ADDR_SKEY as ADDR_SKEY,
+MEMBER_ADDRESS.ADDR_EFF_DT as ADDR_EFF_DT
+FROM db_t_core_prod.MEMBER_ADDRESS
+WHERE ADDR_EXP_DT = ''9999-12-31''
+) LKP ON LKP.MEMB_SKEY = LKP_MEMBER_MSTR.MEMB_SKEY
+QUALIFY RNK = 1
+);
+
+
+-- Component exp_EFF_DT, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_EFF_DT AS
+(
+SELECT
+CASE WHEN exp_Delta_Trg.TX_CD = ''NEW'' THEN LKP_MEMBER_MSTR.MEMB_EFF_DT ELSE CASE WHEN exp_Delta_Trg.TX_CD = ''UPD'' and exp_Delta_Trg.FEED_IND = ''X'' THEN to_date ( ''0101'' || to_char ( DATE_PART(''YYYY'', TO_TIMESTAMP(exp_Delta_Trg.FEED_DT)) ) , ''MMDDYYYY'' ) ELSE CASE WHEN exp_Delta_Trg.TX_CD = ''UPD'' and exp_Delta_Trg.FEED_IND = ''M'' THEN to_date ( lpad ( to_char ( DATE_PART(''MM'', TO_TIMESTAMP(exp_Delta_Trg.FEED_DT)) ) , 2 , ''0'' ) || ''01'' || to_char ( DATE_PART(''YYYY'', TO_TIMESTAMP(exp_Delta_Trg.FEED_DT)) ) , ''MMDDYYYY'' ) ELSE exp_Delta_Trg.FEED_DT END END END as out_CHG_EFF_DT,
+exp_Delta_Trg.source_record_id
+FROM
+exp_Delta_Trg
+INNER JOIN LKP_MEMBER_MSTR ON exp_Delta_Trg.source_record_id = LKP_MEMBER_MSTR.source_record_id
+);
+
+
+-- Component rtr_Address_EXPIRE, Type ROUTER Output Group EXPIRE
+create OR REPLACE TEMPORARY TABLE rtr_Address_EXPIRE AS
+SELECT
+exp_Delta_Trg.TX_CD as TX_CD,
+LKP_MEMBER_MSTR.MEMB_SKEY as MEMB_SKEY_MMLKP,
+LKP_MEMBER_ADDRESS.MEMB_SKEY as MEMB_SKEY_MALKP,
+LKP_ADDRESS.DW_ADDR_SKEY as DW_ADDR_SKEY_ADDLKP,
+LKP_MEMBER_ADDRESS.ADDR_SKEY as ADDR_SKEY_MALKP,
+LKP_MEMBER_ADDRESS.ADDR_EFF_DT as ADD_EFF_DT_MALKP,
+exp_EFF_DT.out_CHG_EFF_DT as out_CHG_EFF_DT,
+m_lkp_Control_Tables.mplt_BATCH_ID as mplt_BATCH_ID,
+m_lkp_Control_Tables.mplt_PRGM_ID as mplt_PRGM_ID,
+m_lkp_Control_Tables.mplt_TABLE_ID as mplt_TABLE_ID,
+m_lkp_Control_Tables.mplt_PROJ_ID as mplt_PROJ_ID,
+exp_Delta_Trg.source_record_id
+FROM
+exp_Delta_Trg
+LEFT JOIN m_lkp_Control_Tables ON exp_Delta_Trg.source_record_id = m_lkp_Control_Tables.source_record_id
+LEFT JOIN LKP_ADDRESS ON m_lkp_Control_Tables.source_record_id = LKP_ADDRESS.source_record_id
+LEFT JOIN LKP_MEMBER_MSTR ON LKP_ADDRESS.source_record_id = LKP_MEMBER_MSTR.source_record_id
+LEFT JOIN LKP_MEMBER_ADDRESS ON LKP_MEMBER_MSTR.source_record_id = LKP_MEMBER_ADDRESS.source_record_id
+LEFT JOIN exp_EFF_DT ON LKP_MEMBER_ADDRESS.source_record_id = exp_EFF_DT.source_record_id
+WHERE CASE WHEN exp_Delta_Trg.TX_CD = ''UPD'' and LKP_ADDRESS.DW_ADDR_SKEY != LKP_MEMBER_ADDRESS.ADDR_SKEY THEN TRUE ELSE FALSE END;
+
+
+-- Component rtr_Address_NEW, Type ROUTER Output Group NEW
+create OR REPLACE TEMPORARY TABLE rtr_Address_NEW AS
+SELECT
+exp_Delta_Trg.TX_CD as TX_CD,
+LKP_MEMBER_MSTR.MEMB_SKEY as MEMB_SKEY_MMLKP,
+LKP_MEMBER_ADDRESS.MEMB_SKEY as MEMB_SKEY_MALKP,
+LKP_ADDRESS.DW_ADDR_SKEY as DW_ADDR_SKEY_ADDLKP,
+LKP_MEMBER_ADDRESS.ADDR_SKEY as ADDR_SKEY_MALKP,
+LKP_MEMBER_ADDRESS.ADDR_EFF_DT as ADD_EFF_DT_MALKP,
+exp_EFF_DT.out_CHG_EFF_DT as out_CHG_EFF_DT,
+m_lkp_Control_Tables.mplt_BATCH_ID as mplt_BATCH_ID,
+m_lkp_Control_Tables.mplt_PRGM_ID as mplt_PRGM_ID,
+m_lkp_Control_Tables.mplt_TABLE_ID as mplt_TABLE_ID,
+m_lkp_Control_Tables.mplt_PROJ_ID as mplt_PROJ_ID,
+exp_Delta_Trg.source_record_id
+FROM
+exp_Delta_Trg
+LEFT JOIN m_lkp_Control_Tables ON exp_Delta_Trg.source_record_id = m_lkp_Control_Tables.source_record_id
+LEFT JOIN LKP_ADDRESS ON m_lkp_Control_Tables.source_record_id = LKP_ADDRESS.source_record_id
+LEFT JOIN LKP_MEMBER_MSTR ON LKP_ADDRESS.source_record_id = LKP_MEMBER_MSTR.source_record_id
+LEFT JOIN LKP_MEMBER_ADDRESS ON LKP_MEMBER_MSTR.source_record_id = LKP_MEMBER_ADDRESS.source_record_id
+LEFT JOIN exp_EFF_DT ON LKP_MEMBER_ADDRESS.source_record_id = exp_EFF_DT.source_record_id
+WHERE CASE WHEN LKP_MEMBER_ADDRESS.MEMB_SKEY IS NULL or ( exp_Delta_Trg.TX_CD = ''UPD'' and LKP_ADDRESS.DW_ADDR_SKEY != LKP_MEMBER_ADDRESS.ADDR_SKEY ) THEN TRUE ELSE FALSE END 
+-- CASE WHEN ( exp_Delta_Trg.TX_CD = ''NEW'' or exp_Delta_Trg.TX_CD = ''UPD'' ) and LKP_ADDRESS.DW_ADDR_SKEY != LKP_MEMBER_ADDRESS.ADDR_SKEY THEN TRUE ELSE FALSE END 
+-- CASE WHEN exp_Delta_Trg.TX_CD = ''NEW'' or ( exp_Delta_Trg.TX_CD = ''UPD'' and LKP_ADDRESS.DW_ADDR_SKEY != LKP_MEMBER_ADDRESS.ADDR_SKEY ) THEN TRUE ELSE FALSE END
+;
+
+
+-- Component upd_Expire, Type UPDATE 
+CREATE OR REPLACE TEMPORARY TABLE upd_Expire AS
+(
+/* UPDATE_STRATEGY_ACTION = 0 FOR INSERT / UPDATE_STRATEGY_ACTION = 1 FOR UPDATE / UPDATE_STRATEGY_ACTION = 2 FOR DELETE / UPDATE_STRATEGY_ACTION = 3 FOR REJECT */
+SELECT
+rtr_Address_EXPIRE.MEMB_SKEY_MMLKP as MEMB_SKEY_MMLKP3,
+rtr_Address_EXPIRE.ADDR_SKEY_MALKP as ADDR_SKEY_MALKP3,
+rtr_Address_EXPIRE.ADD_EFF_DT_MALKP as ADD_EFF_DT_MALKP3,
+rtr_Address_EXPIRE.out_CHG_EFF_DT as out_CHG_EFF_DT3,
+rtr_Address_EXPIRE.mplt_BATCH_ID as mplt_BATCH_ID3,
+rtr_Address_EXPIRE.mplt_PRGM_ID as mplt_PRGM_ID3,
+1 as UPDATE_STRATEGY_ACTION,
+rtr_Address_EXPIRE.source_record_id
+FROM
+rtr_Address_EXPIRE
+);
+
+
+-- Component exp_New, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_New AS
+(
+SELECT
+rtr_Address_NEW.MEMB_SKEY_MMLKP as MEMB_SKEY_MMLKP1,
+rtr_Address_NEW.DW_ADDR_SKEY_ADDLKP as DW_ADDR_SKEY_ADDLKP1,
+rtr_Address_NEW.out_CHG_EFF_DT as out_CHG_EFF_DT1,
+to_date ( ''9999-12-31'' , ''YYYY-MM-DD'' ) as out_CHG_EXP_DT,
+rtr_Address_NEW.mplt_BATCH_ID as mplt_BATCH_ID1,
+rtr_Address_NEW.mplt_PRGM_ID as mplt_PRGM_ID1,
+rtr_Address_NEW.source_record_id
+FROM
+rtr_Address_NEW
+WHERE MEMB_SKEY_MMLKP1 IS NOT NULL
+);
+
+
+-- Component exp_Expire, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_Expire AS
+(
+SELECT
+upd_Expire.MEMB_SKEY_MMLKP3 as MEMB_SKEY,
+upd_Expire.ADDR_SKEY_MALKP3 as ADDR_SKEY,
+upd_Expire.ADD_EFF_DT_MALKP3 as ADD_EFF_DT,
+DATEADD (''d'', -1, upd_Expire.out_CHG_EFF_DT3 ) as ADD_EXP_DT,
+upd_Expire.mplt_BATCH_ID3 as mplt_BATCH_ID3,
+upd_Expire.mplt_PRGM_ID3 as mplt_PRGM_ID3,
+upd_Expire.source_record_id
+FROM
+upd_Expire
+);
+
+
+-- Component INS_MEMBER_ADDRESS, Type TARGET 
+INSERT INTO DB_T_CORE_PROD.MEMBER_ADDRESS
+(
+MEMB_SKEY,
+ADDR_SKEY,
+ADDR_EFF_DT,
+ADDR_EXP_DT,
+ECTL_INS_BATCH_ID,
+ECTL_INS_PRGM_ID
+)
+SELECT
+exp_New.MEMB_SKEY_MMLKP1 as MEMB_SKEY,
+exp_New.DW_ADDR_SKEY_ADDLKP1 as ADDR_SKEY,
+exp_New.out_CHG_EFF_DT1 as ADDR_EFF_DT,
+exp_New.out_CHG_EXP_DT as ADDR_EXP_DT,
+exp_New.mplt_BATCH_ID1 as ECTL_INS_BATCH_ID,
+exp_New.mplt_PRGM_ID1 as ECTL_INS_PRGM_ID
+FROM
+exp_New;
+
+
+-- Component UPD_MEMBER_ADDRESS, Type TARGET 
+MERGE INTO DB_T_CORE_PROD.MEMBER_ADDRESS
+USING exp_Expire ON (MEMBER_ADDRESS.MEMB_SKEY = exp_Expire.MEMB_SKEY AND MEMBER_ADDRESS.ADDR_SKEY = exp_Expire.ADDR_SKEY AND MEMBER_ADDRESS.ADDR_EFF_DT = exp_Expire.ADD_EFF_DT)
+WHEN MATCHED THEN UPDATE
+SET
+MEMB_SKEY = exp_Expire.MEMB_SKEY,
+ADDR_SKEY = exp_Expire.ADDR_SKEY,
+ADDR_EFF_DT = exp_Expire.ADD_EFF_DT,
+ADDR_EXP_DT = exp_Expire.ADD_EXP_DT,
+ECTL_UPD_BATCH_ID = exp_Expire.mplt_BATCH_ID3,
+ECTL_UPD_PRGM_ID = exp_Expire.mplt_PRGM_ID3;
+
+
+END; ';

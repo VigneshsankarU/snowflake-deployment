@@ -1,0 +1,519 @@
+-- Object Type: PROCEDURES
+CREATE OR REPLACE PROCEDURE ALFA_EDW_DEV.PUBLIC.M_UPDATE_FNOL_WH_STAG1("RUN_ID" VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS ' BEGIN 
+
+-- Component claim_tab_object, Type TRUNCATE_TABLE 
+TRUNCATE TABLE DB_T_STAG_MEMBXREF_PROD.claim_tab_object;
+
+
+-- Component claim_tab_object_pol, Type TRUNCATE_TABLE 
+TRUNCATE TABLE DB_T_STAG_MEMBXREF_PROD.claim_tab_object_pol;
+
+
+-- Component claim_tab_object_pol_out, Type TRUNCATE_TABLE 
+TRUNCATE TABLE DB_T_STAG_MEMBXREF_PROD.claim_tab_object_pol_out;
+
+
+-- Component claim_tab_object_pol_out2, Type TRUNCATE_TABLE 
+TRUNCATE TABLE DB_T_STAG_MEMBXREF_PROD.claim_tab_object_pol_out2;
+
+
+-- PIPELINE START FOR 1
+
+-- Component SQ_CLAIM_TAB, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_CLAIM_TAB AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as CLM_CLAIM_NBR,
+$2 as CLM_CAUSE_LOSS_CD,
+$3 as CLM_CSR_CLAIM_NBR,
+$4 as CLM_CREATE_TS,
+$5 as CLM_STATUS_CD,
+$6 as CLM_LOSS_DT,
+$7 as COB_CREATE_TS,
+$8 as COB_UNIT_RFR_NBR,
+$9 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT a.CLM_CLAIM_NBR
+, a.CLM_CAUSE_LOSS_CD
+, a.CLM_CSR_CLAIM_NBR
+, a.CLM_CREATE_TS
+, a.CLM_STATUS_CD
+, a.CLM_LOSS_DT
+, b.COB_CREATE_TS
+, b.COB_UNIT_RFR_NBR
+FROM	DB_T_ONSITE_PROD.CLAIM_TAB a
+, DB_T_ONSITE_PROD.CLAIM_OBJECT b
+where a.CLM_CLAIM_NBR = b.COB_CLAIM_NBR
+and b.cob_unit_rfr_nbr is not null
+/*            and b.COB_CREATE_TS = (select min(cob_create_ts) from DB_T_ONSITE_PROD.CLAIM_OBJECT c  */
+/*            where  c.COB_CLAIM_NBR = a.CLM_CLAIM_NBR) */
+) SRC
+)
+);
+
+
+-- Component exp_Pass_Through, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_Pass_Through AS
+(
+SELECT
+SQ_CLAIM_TAB.CLM_CLAIM_NBR as CLM_CLAIM_NBR,
+SQ_CLAIM_TAB.CLM_CAUSE_LOSS_CD as CLM_CAUSE_LOSS_CD,
+SQ_CLAIM_TAB.CLM_CSR_CLAIM_NBR as CLM_CSR_CLAIM_NBR,
+SQ_CLAIM_TAB.CLM_CREATE_TS as CLM_CREATE_TS,
+SQ_CLAIM_TAB.CLM_STATUS_CD as CLM_STATUS_CD,
+SQ_CLAIM_TAB.CLM_LOSS_DT as CLM_LOSS_DT,
+SQ_CLAIM_TAB.COB_CREATE_TS as COB_CREATE_TS,
+SQ_CLAIM_TAB.COB_UNIT_RFR_NBR as COB_UNIT_RFR_NBR,
+SQ_CLAIM_TAB.source_record_id
+FROM
+SQ_CLAIM_TAB
+);
+
+
+-- Component claim_tab_object, Type TARGET 
+INSERT INTO DB_T_STAG_MEMBXREF_PROD.claim_tab_object
+(
+CLM_CLAIM_NBR,
+CLM_CAUSE_LOSS_CD,
+CLM_CSR_CLAIM_NBR,
+CLM_CREATE_TS,
+CLM_STATUS_CD,
+CLM_LOSS_DT,
+COB_CREATE_TS,
+COB_UNIT_RFR_NBR
+)
+SELECT
+exp_Pass_Through.CLM_CLAIM_NBR as CLM_CLAIM_NBR,
+exp_Pass_Through.CLM_CAUSE_LOSS_CD as CLM_CAUSE_LOSS_CD,
+exp_Pass_Through.CLM_CSR_CLAIM_NBR as CLM_CSR_CLAIM_NBR,
+exp_Pass_Through.CLM_CREATE_TS as CLM_CREATE_TS,
+exp_Pass_Through.CLM_STATUS_CD as CLM_STATUS_CD,
+exp_Pass_Through.CLM_LOSS_DT as CLM_LOSS_DT,
+exp_Pass_Through.COB_CREATE_TS as COB_CREATE_TS,
+exp_Pass_Through.COB_UNIT_RFR_NBR as COB_UNIT_RFR_NBR
+FROM
+exp_Pass_Through;
+
+
+-- PIPELINE END FOR 1
+
+-- PIPELINE START FOR 2
+
+-- Component SQ_claim_tab_object, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_claim_tab_object AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as CLM_CLAIM_NBR,
+$2 as CLM_CAUSE_LOSS_CD,
+$3 as CLM_CSR_CLAIM_NBR,
+$4 as CLM_CREATE_TS,
+$5 as CLM_STATUS_CD,
+$6 as CLM_LOSS_DT,
+$7 as COB_CREATE_TS,
+$8 as COB_UNIT_RFR_NBR,
+$9 as UNIT_RFR_NBR,
+$10 as CLIENT_REF_NBR,
+$11 as POL_NBR,
+$12 as POLICY_ID,
+$13 as EFFECTIVE_DT,
+$14 as EXPIRATION_DT,
+$15 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT a.CLM_CLAIM_NBR
+, a.CLM_CAUSE_LOSS_CD
+, a.CLM_CSR_CLAIM_NBR
+, a.CLM_CREATE_TS
+, a.CLM_STATUS_CD
+, a.CLM_LOSS_DT
+, a.COB_CREATE_TS
+, a.COB_UNIT_RFR_NBR
+, b.CLIENT_REF_NBR
+, b.UNIT_RFR_NBR
+, b.POL_NBR
+, b.POLICY_ID
+, b.EFFECTIVE_DT
+, b.EXPIRATION_DT
+FROM DB_T_STAG_MEMBXREF_PROD.claim_tab_object a
+, DB_T_STAG_MEMBXREF_PROD.POL_VEH_LIST b
+where a.COB_UNIT_RFR_NBR = b.UNIT_RFR_NBR
+) SRC
+)
+);
+
+
+-- Component exp_Pass_Through1, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_Pass_Through1 AS
+(
+SELECT
+SQ_claim_tab_object.CLM_CLAIM_NBR as CLM_CLAIM_NBR,
+SQ_claim_tab_object.CLM_CAUSE_LOSS_CD as CLM_CAUSE_LOSS_CD,
+SQ_claim_tab_object.CLM_CSR_CLAIM_NBR as CLM_CSR_CLAIM_NBR,
+SQ_claim_tab_object.CLM_CREATE_TS as CLM_CREATE_TS,
+SQ_claim_tab_object.CLM_STATUS_CD as CLM_STATUS_CD,
+SQ_claim_tab_object.CLM_LOSS_DT as CLM_LOSS_DT,
+SQ_claim_tab_object.COB_CREATE_TS as COB_CREATE_TS,
+SQ_claim_tab_object.COB_UNIT_RFR_NBR as COB_UNIT_RFR_NBR,
+SQ_claim_tab_object.UNIT_RFR_NBR as UNIT_RFR_NBR,
+SQ_claim_tab_object.CLIENT_REF_NBR as CLIENT_REF_NBR,
+SQ_claim_tab_object.POL_NBR as POL_NBR,
+SQ_claim_tab_object.POLICY_ID as POLICY_ID,
+SQ_claim_tab_object.EFFECTIVE_DT as EFFECTIVE_DT,
+SQ_claim_tab_object.EXPIRATION_DT as EXPIRATION_DT,
+SQ_claim_tab_object.source_record_id
+FROM
+SQ_claim_tab_object
+);
+
+
+-- Component claim_tab_object_pol, Type TARGET 
+INSERT INTO DB_T_STAG_MEMBXREF_PROD.claim_tab_object_pol
+(
+CLM_CLAIM_NBR,
+CLM_CAUSE_LOSS_CD,
+CLM_CSR_CLAIM_NBR,
+CLM_CREATE_TS,
+CLM_STATUS_CD,
+CLM_LOSS_DT,
+COB_CREATE_TS,
+COB_UNIT_RFR_NBR,
+UNIT_RFR_NBR,
+CLIENT_REF_NBR,
+POL_NBR,
+POLICY_ID,
+EFFECTIVE_DT,
+EXPIRATION_DT
+)
+SELECT
+exp_Pass_Through1.CLM_CLAIM_NBR as CLM_CLAIM_NBR,
+exp_Pass_Through1.CLM_CAUSE_LOSS_CD as CLM_CAUSE_LOSS_CD,
+exp_Pass_Through1.CLM_CSR_CLAIM_NBR as CLM_CSR_CLAIM_NBR,
+exp_Pass_Through1.CLM_CREATE_TS as CLM_CREATE_TS,
+exp_Pass_Through1.CLM_STATUS_CD as CLM_STATUS_CD,
+exp_Pass_Through1.CLM_LOSS_DT as CLM_LOSS_DT,
+exp_Pass_Through1.COB_CREATE_TS as COB_CREATE_TS,
+exp_Pass_Through1.COB_UNIT_RFR_NBR as COB_UNIT_RFR_NBR,
+exp_Pass_Through1.UNIT_RFR_NBR as UNIT_RFR_NBR,
+exp_Pass_Through1.CLIENT_REF_NBR as CLIENT_REF_NBR,
+exp_Pass_Through1.POL_NBR as POL_NBR,
+exp_Pass_Through1.POLICY_ID as POLICY_ID,
+exp_Pass_Through1.EFFECTIVE_DT as EFFECTIVE_DT,
+exp_Pass_Through1.EXPIRATION_DT as EXPIRATION_DT
+FROM
+exp_Pass_Through1;
+
+
+-- PIPELINE END FOR 2
+
+-- PIPELINE START FOR 3
+
+-- Component SQ_claim_tab_object1, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_claim_tab_object1 AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as CLM_CLAIM_NBR,
+$2 as CLM_CAUSE_LOSS_CD,
+$3 as CLM_CSR_CLAIM_NBR,
+$4 as CLM_CREATE_TS,
+$5 as CLM_STATUS_CD,
+$6 as CLM_LOSS_DT,
+$7 as COB_CREATE_TS,
+$8 as COB_UNIT_RFR_NBR,
+$9 as UNIT_RFR_NBR,
+$10 as CLIENT_REF_NBR,
+$11 as POL_NBR,
+$12 as POLICY_ID,
+$13 as EFFECTIVE_DT,
+$14 as EXPIRATION_DT,
+$15 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT a.CLM_CLAIM_NBR
+, a.CLM_CAUSE_LOSS_CD
+, a.CLM_CSR_CLAIM_NBR
+, a.CLM_CREATE_TS
+, a.CLM_STATUS_CD
+, a.CLM_LOSS_DT
+, a.COB_CREATE_TS
+, a.COB_UNIT_RFR_NBR
+, b.CLIENT_REF_NBR
+, b.UNIT_RFR_NBR
+, b.POL_NBR
+, b.POLICY_ID
+, b.EFFECTIVE_DT
+, b.EXPIRATION_DT
+FROM DB_T_STAG_MEMBXREF_PROD.claim_tab_object a
+, DB_T_STAG_MEMBXREF_PROD.OUT_OF_FORCE_POL_VEH_LIST b
+where a.COB_UNIT_RFR_NBR = b.UNIT_RFR_NBR
+) SRC
+)
+);
+
+
+-- Component exp_Pass_Through2, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_Pass_Through2 AS
+(
+SELECT
+SQ_claim_tab_object1.CLM_CLAIM_NBR as CLM_CLAIM_NBR,
+SQ_claim_tab_object1.CLM_CAUSE_LOSS_CD as CLM_CAUSE_LOSS_CD,
+SQ_claim_tab_object1.CLM_CSR_CLAIM_NBR as CLM_CSR_CLAIM_NBR,
+SQ_claim_tab_object1.CLM_CREATE_TS as CLM_CREATE_TS,
+SQ_claim_tab_object1.CLM_STATUS_CD as CLM_STATUS_CD,
+SQ_claim_tab_object1.CLM_LOSS_DT as CLM_LOSS_DT,
+SQ_claim_tab_object1.COB_CREATE_TS as COB_CREATE_TS,
+SQ_claim_tab_object1.COB_UNIT_RFR_NBR as COB_UNIT_RFR_NBR,
+SQ_claim_tab_object1.UNIT_RFR_NBR as UNIT_RFR_NBR,
+SQ_claim_tab_object1.CLIENT_REF_NBR as CLIENT_REF_NBR,
+SQ_claim_tab_object1.POL_NBR as POL_NBR,
+SQ_claim_tab_object1.POLICY_ID as POLICY_ID,
+SQ_claim_tab_object1.EFFECTIVE_DT as EFFECTIVE_DT,
+SQ_claim_tab_object1.EXPIRATION_DT as EXPIRATION_DT,
+SQ_claim_tab_object1.source_record_id
+FROM
+SQ_claim_tab_object1
+);
+
+
+-- Component claim_tab_object_pol_out, Type TARGET 
+INSERT INTO DB_T_STAG_MEMBXREF_PROD.claim_tab_object_pol_out
+(
+CLM_CLAIM_NBR,
+CLM_CAUSE_LOSS_CD,
+CLM_CSR_CLAIM_NBR,
+CLM_CREATE_TS,
+CLM_STATUS_CD,
+CLM_LOSS_DT,
+COB_CREATE_TS,
+COB_UNIT_RFR_NBR,
+UNIT_RFR_NBR,
+CLIENT_REF_NBR,
+POL_NBR,
+POLICY_ID,
+EFFECTIVE_DT,
+EXPIRATION_DT
+)
+SELECT
+exp_Pass_Through2.CLM_CLAIM_NBR as CLM_CLAIM_NBR,
+exp_Pass_Through2.CLM_CAUSE_LOSS_CD as CLM_CAUSE_LOSS_CD,
+exp_Pass_Through2.CLM_CSR_CLAIM_NBR as CLM_CSR_CLAIM_NBR,
+exp_Pass_Through2.CLM_CREATE_TS as CLM_CREATE_TS,
+exp_Pass_Through2.CLM_STATUS_CD as CLM_STATUS_CD,
+exp_Pass_Through2.CLM_LOSS_DT as CLM_LOSS_DT,
+exp_Pass_Through2.COB_CREATE_TS as COB_CREATE_TS,
+exp_Pass_Through2.COB_UNIT_RFR_NBR as COB_UNIT_RFR_NBR,
+exp_Pass_Through2.UNIT_RFR_NBR as UNIT_RFR_NBR,
+exp_Pass_Through2.CLIENT_REF_NBR as CLIENT_REF_NBR,
+exp_Pass_Through2.POL_NBR as POL_NBR,
+exp_Pass_Through2.POLICY_ID as POLICY_ID,
+exp_Pass_Through2.EFFECTIVE_DT as EFFECTIVE_DT,
+exp_Pass_Through2.EXPIRATION_DT as EXPIRATION_DT
+FROM
+exp_Pass_Through2;
+
+
+-- PIPELINE END FOR 3
+
+-- PIPELINE START FOR 4
+
+-- Component SQ_claim_tab_object_pol, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_claim_tab_object_pol AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as CLM_CLAIM_NBR,
+$2 as CLM_CAUSE_LOSS_CD,
+$3 as CLM_CSR_CLAIM_NBR,
+$4 as CLM_CREATE_TS,
+$5 as CLM_STATUS_CD,
+$6 as CLM_LOSS_DT,
+$7 as COB_CREATE_TS,
+$8 as COB_UNIT_RFR_NBR,
+$9 as UNIT_RFR_NBR,
+$10 as CLIENT_REF_NBR,
+$11 as POL_NBR,
+$12 as POLICY_ID,
+$13 as EFFECTIVE_DT,
+$14 as EXPIRATION_DT,
+$15 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT CLM_CLAIM_NBR
+, CLM_CAUSE_LOSS_CD
+, CLM_CSR_CLAIM_NBR
+, CLM_CREATE_TS
+, CLM_STATUS_CD
+, CLM_LOSS_DT
+, COB_CREATE_TS
+, COB_UNIT_RFR_NBR
+, CLIENT_REF_NBR
+, UNIT_RFR_NBR
+, POL_NBR
+, POLICY_ID
+, EFFECTIVE_DT
+, EXPIRATION_DT
+FROM DB_T_STAG_MEMBXREF_PROD.claim_tab_object_pol
+union
+SELECT CLM_CLAIM_NBR
+, CLM_CAUSE_LOSS_CD
+, CLM_CSR_CLAIM_NBR
+, CLM_CREATE_TS
+, CLM_STATUS_CD
+, CLM_LOSS_DT
+, COB_CREATE_TS
+, COB_UNIT_RFR_NBR
+, CLIENT_REF_NBR
+, UNIT_RFR_NBR
+, POL_NBR
+, POLICY_ID
+, EFFECTIVE_DT
+, EXPIRATION_DT
+FROM DB_T_STAG_MEMBXREF_PROD.claim_tab_object_pol_out
+) SRC
+)
+);
+
+
+-- Component exp_Pass_Through3, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_Pass_Through3 AS
+(
+SELECT
+SQ_claim_tab_object_pol.CLM_CLAIM_NBR as CLM_CLAIM_NBR,
+SQ_claim_tab_object_pol.CLM_CAUSE_LOSS_CD as CLM_CAUSE_LOSS_CD,
+SQ_claim_tab_object_pol.CLM_CSR_CLAIM_NBR as CLM_CSR_CLAIM_NBR,
+SQ_claim_tab_object_pol.CLM_CREATE_TS as CLM_CREATE_TS,
+SQ_claim_tab_object_pol.CLM_STATUS_CD as CLM_STATUS_CD,
+SQ_claim_tab_object_pol.CLM_LOSS_DT as CLM_LOSS_DT,
+SQ_claim_tab_object_pol.COB_CREATE_TS as COB_CREATE_TS,
+SQ_claim_tab_object_pol.COB_UNIT_RFR_NBR as COB_UNIT_RFR_NBR,
+SQ_claim_tab_object_pol.UNIT_RFR_NBR as UNIT_RFR_NBR,
+SQ_claim_tab_object_pol.CLIENT_REF_NBR as CLIENT_REF_NBR,
+SQ_claim_tab_object_pol.POL_NBR as POL_NBR,
+SQ_claim_tab_object_pol.POLICY_ID as POLICY_ID,
+SQ_claim_tab_object_pol.EFFECTIVE_DT as EFFECTIVE_DT,
+SQ_claim_tab_object_pol.EXPIRATION_DT as EXPIRATION_DT,
+SQ_claim_tab_object_pol.source_record_id
+FROM
+SQ_claim_tab_object_pol
+);
+
+
+-- Component claim_tab_object_pol_out2, Type TARGET 
+INSERT INTO DB_T_STAG_MEMBXREF_PROD.claim_tab_object_pol_out2
+(
+CLM_CLAIM_NBR,
+CLM_CAUSE_LOSS_CD,
+CLM_CSR_CLAIM_NBR,
+CLM_CREATE_TS,
+CLM_STATUS_CD,
+CLM_LOSS_DT,
+COB_CREATE_TS,
+COB_UNIT_RFR_NBR,
+UNIT_RFR_NBR,
+CLIENT_REF_NBR,
+POL_NBR,
+POLICY_ID,
+EFFECTIVE_DT,
+EXPIRATION_DT
+)
+SELECT
+exp_Pass_Through3.CLM_CLAIM_NBR as CLM_CLAIM_NBR,
+exp_Pass_Through3.CLM_CAUSE_LOSS_CD as CLM_CAUSE_LOSS_CD,
+exp_Pass_Through3.CLM_CSR_CLAIM_NBR as CLM_CSR_CLAIM_NBR,
+exp_Pass_Through3.CLM_CREATE_TS as CLM_CREATE_TS,
+exp_Pass_Through3.CLM_STATUS_CD as CLM_STATUS_CD,
+exp_Pass_Through3.CLM_LOSS_DT as CLM_LOSS_DT,
+exp_Pass_Through3.COB_CREATE_TS as COB_CREATE_TS,
+exp_Pass_Through3.COB_UNIT_RFR_NBR as COB_UNIT_RFR_NBR,
+exp_Pass_Through3.UNIT_RFR_NBR as UNIT_RFR_NBR,
+exp_Pass_Through3.CLIENT_REF_NBR as CLIENT_REF_NBR,
+exp_Pass_Through3.POL_NBR as POL_NBR,
+exp_Pass_Through3.POLICY_ID as POLICY_ID,
+exp_Pass_Through3.EFFECTIVE_DT as EFFECTIVE_DT,
+exp_Pass_Through3.EXPIRATION_DT as EXPIRATION_DT
+FROM
+exp_Pass_Through3;
+
+
+-- PIPELINE END FOR 4
+
+-- Component SQ_CLAIM_TAB1, Type SOURCE 
+CREATE OR REPLACE TEMPORARY TABLE SQ_CLAIM_TAB1 AS
+(
+SELECT /* adding column aliases to ensure proper downstream column references */
+$1 as CLM_CLAIM_NBR,
+$2 as CLM_CAUSE_LOSS_CD,
+$3 as CLM_CSR_CLAIM_NBR,
+$4 as CLM_CREATE_TS,
+$5 as CLM_STATUS_CD,
+$6 as CLM_LOSS_DT,
+$7 as COB_CREATE_TS,
+$8 as COB_UNIT_RFR_NBR,
+$9 as source_record_id
+FROM (
+SELECT SRC.*, row_number() over (order by 1) AS source_record_id FROM (
+SELECT a.CLM_CLAIM_NBR
+, a.CLM_CAUSE_LOSS_CD
+, a.CLM_CSR_CLAIM_NBR
+, a.CLM_CREATE_TS
+, a.CLM_STATUS_CD
+, a.CLM_LOSS_DT
+, b.COB_CREATE_TS
+, b.COB_UNIT_RFR_NBR
+FROM	DB_T_ONSITE_PROD.CLAIM_TAB a
+, DB_T_ONSITE_PROD.CLAIM_OBJECT b
+where a.CLM_CLAIM_NBR = b.COB_CLAIM_NBR
+and b.cob_unit_rfr_nbr is not null
+and 1=2
+) SRC
+)
+);
+
+
+-- Component exp_Pass_Through4, Type EXPRESSION 
+CREATE OR REPLACE TEMPORARY TABLE exp_Pass_Through4 AS
+(
+SELECT
+SQ_CLAIM_TAB1.CLM_CLAIM_NBR as CLM_CLAIM_NBR,
+SQ_CLAIM_TAB1.CLM_CAUSE_LOSS_CD as CLM_CAUSE_LOSS_CD,
+SQ_CLAIM_TAB1.CLM_CSR_CLAIM_NBR as CLM_CSR_CLAIM_NBR,
+SQ_CLAIM_TAB1.CLM_CREATE_TS as CLM_CREATE_TS,
+SQ_CLAIM_TAB1.CLM_STATUS_CD as CLM_STATUS_CD,
+SQ_CLAIM_TAB1.CLM_LOSS_DT as CLM_LOSS_DT,
+SQ_CLAIM_TAB1.COB_CREATE_TS as COB_CREATE_TS,
+SQ_CLAIM_TAB1.COB_UNIT_RFR_NBR as COB_UNIT_RFR_NBR,
+SQ_CLAIM_TAB1.source_record_id
+FROM
+SQ_CLAIM_TAB1
+);
+
+
+-- Component claim_tab_object2_1, Type TARGET 
+INSERT INTO DB_T_STAG_MEMBXREF_PROD.claim_tab_object
+(
+CLM_CLAIM_NBR,
+CLM_CAUSE_LOSS_CD,
+CLM_CSR_CLAIM_NBR,
+CLM_CREATE_TS,
+CLM_STATUS_CD,
+CLM_LOSS_DT,
+COB_CREATE_TS,
+COB_UNIT_RFR_NBR
+)
+SELECT
+exp_Pass_Through4.CLM_CLAIM_NBR as CLM_CLAIM_NBR,
+exp_Pass_Through4.CLM_CAUSE_LOSS_CD as CLM_CAUSE_LOSS_CD,
+exp_Pass_Through4.CLM_CSR_CLAIM_NBR as CLM_CSR_CLAIM_NBR,
+exp_Pass_Through4.CLM_CREATE_TS as CLM_CREATE_TS,
+exp_Pass_Through4.CLM_STATUS_CD as CLM_STATUS_CD,
+exp_Pass_Through4.CLM_LOSS_DT as CLM_LOSS_DT,
+exp_Pass_Through4.COB_CREATE_TS as COB_CREATE_TS,
+exp_Pass_Through4.COB_UNIT_RFR_NBR as COB_UNIT_RFR_NBR
+FROM
+exp_Pass_Through4;
+
+
+END; ';
